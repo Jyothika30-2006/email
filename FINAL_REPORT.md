@@ -1,7 +1,7 @@
 # SENTINEL-IR — build report (what was asked, what exists, what was measured)
 
 Repo: `/home/user/email` · package `cybersecurity_agent/` · 9.2k lines of Python (46 modules) +
-2.22k lines of tests (128 tests) + 2 shell scripts + 1 Solidity contract + 4 sample `.eml`.
+2.22k lines of tests (128 tests) + 3 shell scripts (`setup.sh`, `compile_contract.sh`, `demo.sh`) + 1 Solidity contract + 4 sample `.eml`.
 Everything below was verified in this sandbox on 2026-09-07; commands are copy-pasteable.
 
 ---
