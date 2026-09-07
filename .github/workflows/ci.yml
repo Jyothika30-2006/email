@@ -49,16 +49,59 @@ jobs:
           pip install -e ".[dev]"
 
       - name: selftest — safety invariants, no case file required
-        run: python -m cybersecurity_agent selftest
+        shell: bash
+        run: |
+          set +e
+          python -m cybersecurity_agent selftest 2>&1 | tee "$RUNNER_TEMP/selftest.log"
+          rc=${PIPESTATUS[0]}
+          if [ "$rc" -ne 0 ]; then
+            msg=$(tail -n 24 "$RUNNER_TEMP/selftest.log" | sed 's/%/%25/g' | paste -sd '%0A' -)
+            printf '::error::selftest failed (exit %s): %s\n' "$rc" "$msg"
+          fi
+          exit "$rc"
 
+      # `-o addopts=""` matters: pyproject already passes -q, and `-q -q` collapses the whole
+      # summary to dots — the worst possible thing for a failing run to print. The ::error:: lines
+      # put the failing test names into the check annotations, readable without log access.
+      # The proxies are the point of this step: GitHub runners *do* have internet, this suite must
+      # not notice. Every HTTP request goes to a port nothing listens on; 127.0.0.1 (where the
+      # tests' own mock server lives) stays direct.
       - name: pytest — offline, no network egress needed
-        run: python -m pytest tests -q --color=yes
+        shell: bash
+        run: |
+          export http_proxy=http://127.0.0.1:9 https_proxy=http://127.0.0.1:9
+          export HTTP_PROXY=$http_proxy HTTPS_PROXY=$https_proxy
+          export no_proxy=127.0.0.1,localhost,::1 NO_PROXY=$no_proxy
+          set +e
+          python -m pytest tests -o addopts="" -q --color=no --tb=short 2>&1 | tee "$RUNNER_TEMP/pytest.log"
+          rc=${PIPESTATUS[0]}
+          if [ "$rc" -ne 0 ]; then
+            grep -E "^(FAILED|ERROR)" "$RUNNER_TEMP/pytest.log" | head -n 12 | while IFS= read -r line; do
+              printf '::error::%s\n' "${line//%/%25}"
+            done
+            tail -n 4 "$RUNNER_TEMP/pytest.log" | while IFS= read -r line; do
+              printf '::notice::%s\n' "${line//%/%25}"
+            done
+          fi
+          exit "$rc"
 
       - name: guided demo — the four samples, the gate, the parity check
         shell: bash
         run: |
           set -o pipefail
+          export http_proxy=http://127.0.0.1:9 https_proxy=http://127.0.0.1:9
+          export HTTP_PROXY=$http_proxy HTTPS_PROXY=$https_proxy
+          export no_proxy=127.0.0.1,localhost,::1 NO_PROXY=$no_proxy
           bash scripts/demo.sh --quick 2>&1 | tee "$RUNNER_TEMP/demo.log"
+
+      # The demo is a script of assertions, so say which assertion failed in the annotations too.
+      - name: which claim broke
+        if: failure()
+        shell: bash
+        run: |
+          grep -E "✗|FAILURES|Traceback|Error:" "$RUNNER_TEMP/demo.log" | head -n 10 | while IFS= read -r line; do
+            printf '::error::%s\n' "${line//%/%25}"
+          done || true
 
       # Deliberately NOT uploading runs/ or evidence/: a case directory is somebody's
       # mail, and this project's own rule is that evidence stays on the analyst's disk.
@@ -92,10 +135,22 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install -e ".[dev,chain]"
+      # Same no-egress rule as the main job, so "it passes with the extras installed" means the
+      # same thing as "it passes offline".
       - name: tests that skip without pycryptodome must pass with it
-        run: python -m pytest tests/test_ganache_logger.py -q --color=yes
+        shell: bash
+        run: |
+          export http_proxy=http://127.0.0.1:9 https_proxy=http://127.0.0.1:9
+          export HTTP_PROXY=$http_proxy HTTPS_PROXY=$https_proxy
+          export no_proxy=127.0.0.1,localhost,::1 NO_PROXY=$no_proxy
+          python -m pytest tests/test_ganache_logger.py -o addopts="" -q --color=no --tb=short
       - name: and the suite must agree with itself either way
-        run: python -m pytest tests -q --color=yes
+        shell: bash
+        run: |
+          export http_proxy=http://127.0.0.1:9 https_proxy=http://127.0.0.1:9
+          export HTTP_PROXY=$http_proxy HTTPS_PROXY=$https_proxy
+          export no_proxy=127.0.0.1,localhost,::1 NO_PROXY=$no_proxy
+          python -m pytest tests -o addopts="" -q --color=no --tb=short
 
   quality:
     name: lint
