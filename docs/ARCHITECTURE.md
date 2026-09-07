@@ -123,8 +123,23 @@ def tool_resolve_origin(ctx: ToolContext, args: dict) -> ToolResult: …
   `describe_tools()` / `ollama_tool_schemas()` generate both the prompt text and the native
   tool list from the *same* registry, so the model can never be shown a tool the dispatcher
   would refuse.
-* Registry is built by import side-effects; `selftest` asserts it has exactly the 9
-  expected names and refuses `shell`, so a packaging mistake fails loudly.
+* Registry is built by import side-effects; `selftest` fails if any of the eight designed
+  tools is missing and proves `shell` is refused, while
+  `tests/test_whitelist_and_safety.py::test_registry_contains_exactly_the_designed_tools`
+  pins the exact 9-name set — so a packaging mistake fails loudly.
+* **Ordering is advisory; missing inputs are handled, not assumed away.** `dispatch()`
+  *can* enforce a declared `needs=(...)` list (skipping the tool with the reason recorded —
+  exercised by `test_prerequisite_ordering_is_enforced`), but deliberately **no production
+  tool declares one**: every tool self-guards instead, because a free-running LLM may call
+  them in any order. `check_tor_exit` returns a note when no candidate IP exists yet,
+  `geolocate_ip` dedupes already-located IPs (`⊘`), and `resolve_origin._trace_urls()` parses
+  `extract_url_pairs()` itself when `state["extract_urls"]` is absent. Net effect: a weird
+  call order costs a lookup, never a whole fallback rung. The offline planner runs
+  `extract_urls` *second* — before `resolve_origin` — because the lure-domain
+  fallback (3a) needs the link set, then takes a **second pass** through
+  `resolve_origin → geolocate_ip → check_reputation` now that attacker infrastructure is
+  known (`llm/deterministic.PIPELINE`).
+
 
 ---
 
