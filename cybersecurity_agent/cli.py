@@ -81,6 +81,9 @@ def build_parser() -> argparse.ArgumentParser:
     ma.add_argument("--port", type=int, default=8099)
     ma.add_argument("--bind", default="127.0.0.1")
     ma.add_argument("--fixtures", help="JSON file of canned responses keyed by path")
+    ma.add_argument("--allow-public", action="store_true",
+                    help="permit a non-loopback --bind (sandboxed preview only: it serves "
+                         "synthetic GeoIP fixtures and no case data)")
 
     sub.add_parser("selftest", help="import/registry/ledger smoke test")
     return ap
@@ -310,9 +313,12 @@ def cmd_mock(args: argparse.Namespace) -> int:
     from .tools_dev import serve_mock
 
     print(f"[sentinel] mock GeoIP/reputation API on http://{args.bind}:{args.port} (fixtures: {args.fixtures or 'built-in demo set'})")
-    print("[sentinel] use with:  --geo-base-url http://127.0.0.1:%d --reputation-base-url http://127.0.0.1:%d --geoip-allow-private"
-          % (args.port, args.port))
-    serve_mock(bind=args.bind, port=args.port, fixtures=Path(args.fixtures) if args.fixtures else None)
+    print("[sentinel] use with:  --geo-base-url http://%s:%d --reputation-base-url http://%s:%d --geoip-allow-private"
+          % (args.bind, args.port, args.bind, args.port))
+    print("[sentinel] a browser can open http://%s:%d/ for the route + fixture index (demo data only)"
+          % (args.bind, args.port))
+    serve_mock(bind=args.bind, port=args.port, fixtures=Path(args.fixtures) if args.fixtures else None,
+               allow_public=bool(getattr(args, "allow_public", False)))
     return 0
 
 

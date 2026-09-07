@@ -361,7 +361,7 @@ python -m cybersecurity_agent investigate samples/gmail_bec_subtle.eml --demo   
 
 ## 12. Tests & demo harness
 ```bash
-.venv/bin/python -m pytest tests -q          # 101 tests in ~6 s, no network egress needed
+.venv/bin/python -m pytest tests -q          # 103 tests in ~6 s, no network egress needed
 python -m cybersecurity_agent selftest       # 5 checks: 9-tool registry, whitelist refuses
                                              # 'shell', timeout raises, fuse math, and a
                                              # deliberately tampered ledger is detected
@@ -388,6 +388,12 @@ python -m cybersecurity_agent investigate samples/phishing_obvious.eml --demo \
       --geo-base-url http://127.0.0.1:8099 --reputation-base-url http://127.0.0.1:8099 \
       --geoip-allow-private
 ```
+`GET /` on that server renders its own documentation — route table, the seven synthetic
+GeoIP rows, and the exact `investigate` command to paste. It is *not* a dashboard (the agent
+has no UI beyond the terminal); it exists so a preview or a confused judge sees an
+explanation instead of a 404. Reaching it off-loopback requires `--bind 0.0.0.0 --allow-public`,
+which prints a warning and still serves only synthetic fixtures — no case data, no credentials.
+
 Canned answers stay labelled as canned: DNS/PTR fixture hits are tagged `fixture` at the
 resolver boundary, the Tor check appends `simulated via fixture tor_exit_ips.txt (NOT a live
 DNSEL answer)`, and the mock GeoIP rows carry `Reserved (demo fixture)` — so a demo can never be
@@ -409,7 +415,7 @@ cybersecurity_agent/            (≈7.7k lines; stdlib + rich + dnspython only)
 ├── safety.py              SAFETY #1/#4/#5/#8: FORBIDDEN_ACTIONS, KillSwitch, run_with_timeout, run_argv
 ├── net.py                 bounded HTTP (urllib), DNS + fixture hook, IP classification,
 │                          provider-network tables, sanitize_untrusted()/injection_attempts()
-├── tools_dev.py           local mock GeoIP/reputation server + pixel listener (demo/CI)
+├── tools_dev.py           mock GeoIP/reputation server (self-documenting index) + pixel listener
 ├── prompts/agent_system_prompt.py     the exact system prompt (verbatim) + <EMAIL_DATA> wrapper
 ├── evidence/
 │   ├── eml.py             header/hop/auth/DKIM/attachment parsing, tz + Message-ID forensics
@@ -444,7 +450,7 @@ samples/                   4 .eml (clean · obvious phishing · subtle Gmail BEC
   ├── payloads/            macro stub / renamed-EXE / EICAR (all harmless) + fixtures/
   └── fixtures/            dns_fixtures.json · tor_exit_ips.txt (demo/CI determinism)
 scripts/                   generate_samples.py · setup.sh · compile_contract.sh
-tests/                     101 tests (1 726 lines) — see §12
+tests/                     103 tests (1 750 lines) — see §12
 config/default.env.example every SENTINEL_* knob, commented
 docs/ARCHITECTURE.md       module boundaries, trust model, the three brains, extension points
 docs/FORENSIC_METHODOLOGY.md  weights, fusion math, confidence semantics, how to read a report

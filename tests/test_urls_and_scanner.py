@@ -261,3 +261,27 @@ def test_logo_alt_text_counts_as_a_visible_brand_claim(tmp_path):
     assert by_host["cdn.example.org"].get("brand_mismatch") in (False, None), \
         "an unlabelled image is not a brand claim"
     assert any(s.factor == "brand_mismatch" for s in res.signals)
+
+
+def test_mock_index_page_explains_itself_without_leaking_case_data():
+    """The demo fixture server can be bound for a sandboxed preview, so `GET /` must
+    read as documentation (and must not look like a dashboard the agent 'has')."""
+    from cybersecurity_agent.tools_dev import DEMO_FIXTURES, mock_index_html
+
+    page = mock_index_html(DEMO_FIXTURES, bind="0.0.0.0", port=8099)
+    assert "This is not the product's UI" in page
+    assert "/json/&lt;ip&gt;" in page or "/json/<ip>" in page
+    assert "127.0.0.1" in page, "the demo IPs are the point of the page"
+    # a wildcard bind is not a client address — the copy-paste command must be usable
+    assert "http://127.0.0.1:8099 --reputation-base-url" in page
+    assert "0.0.0.0:8099 --reputation-base-url" not in page
+
+
+def test_mock_server_refuses_a_public_bind_unless_told_otherwise():
+    import pytest
+
+    from cybersecurity_agent.tools_dev import serve_mock
+
+    with pytest.raises(SystemExit) as exc:
+        serve_mock(bind="0.0.0.0", port=0)          # refuses before binding anything
+    assert "--allow-public" in str(exc.value)

@@ -1,7 +1,7 @@
 # SENTINEL-IR — build report (what was asked, what exists, what was measured)
 
 Repo: `/home/user/email` · package `cybersecurity_agent/` · 7.7k lines of Python +
-1.73k lines of tests (101 tests) + 2 shell scripts + 1 Solidity contract + 4 sample `.eml`.
+1.73k lines of tests (103 tests) + 2 shell scripts + 1 Solidity contract + 4 sample `.eml`.
 Everything below was verified in this sandbox on 2026-09-07; commands are copy-pasteable.
 
 ---
@@ -107,7 +107,7 @@ $ python -m cybersecurity_agent selftest
 → ✅ all safety invariants hold (9 tools registered, 'shell' refused, timeout raises,
     ledger tamper detected)
 $ .venv/bin/python -m pytest tests -q
-→ 101 passed in 6.1 s, no network egress needed
+→ 103 passed in 6.1 s, no network egress needed
 ```
 
 ---
@@ -173,4 +173,4 @@ $ .venv/bin/python -m pytest tests -q
 3. `docs/FORENSIC_METHODOLOGY.md` — the full weight table, fusion math, the origin ladder,
    what each report line means, and what "unobserved" implies.
 4. `cybersecurity_agent/agent.py` → `tools/dispatch.py` → `risk.py` → `blockchain/hashchain.py`.
-5. `tests/` (10 files, 101 tests) — each test name states the claim it defends.
+5. `tests/` (10 files, 103 tests) — each test name states the claim it defends.

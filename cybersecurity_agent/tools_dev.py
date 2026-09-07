@@ -6,13 +6,18 @@
                    by default and only appends JSONL lines; it never parses or
                    executes anything a client sends beyond logging the path.
 
-Both are plain stdlib http.server instances and both refuse to run if asked to
-bind a public interface without an explicit flag — we do not hand out open proxies.
+Both are plain stdlib http.server instances with deliberate network policies, because we
+do not hand out open proxies or accidental telemetry collectors:
+  * `serve_mock` refuses a non-loopback bind unless `--allow-public` is given (it serves
+    synthetic GeoIP rows only — the flag exists for a sandboxed preview), and
+  * `serve_pixel` *warns* loudly when bound to a routable interface, because a real
+    investigation may legitimately need a listener the other side can reach.
 """
 from __future__ import annotations
 
 import json
 import re
+import sys
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -137,12 +142,84 @@ def _abuseipdb_from(path: str) -> Optional[dict[str, Any]]:
                      "isPublic": False, "isWhitelisted": False}}
 
 
-def serve_mock(bind: str, port: int, fixtures: Optional[Path] = None) -> None:
+def mock_index_html(table: dict[str, Any], *, bind: str, port: int) -> str:
+    """A readable page for `GET /`, so the demo server explains itself instead of
+    showing a bare 404 in a browser. It serves *no* case data — only the synthetic
+    GeoIP fixtures this thing exists to hand out."""
+    import html as _html
+
+    rows = []
+    for key, obj in sorted(table.items()):
+        if not key.startswith("/json/"):
+            continue
+        ip = key.rsplit("/", 1)[-1]
+        rows.append(
+            "<tr><td><code>%(key)s</code></td><td>%(ip)s</td><td>%(city)s</td>"
+            "<td>%(cc)s</td><td>±%(rad)s km</td><td>%(tz)s</td></tr>" % {
+                "key": _html.escape(key), "ip": _html.escape(ip),
+                "city": _html.escape(str(obj.get("city", "—"))),
+                "cc": _html.escape(str(obj.get("countryCode", "—"))),
+                "rad": _html.escape(str((obj.get("proximity") or {}).get("accuracyRadius", "—"))),
+                "tz": _html.escape(str(obj.get("timezone", "—"))),
+            })
+    # A wildcard bind is not something to type into a client; show a usable address.
+    host = "127.0.0.1" if bind in {"0.0.0.0", "::", ""} else bind
+    base = f"http://{host}:{port}"
+    return f"""<!doctype html><meta charset="utf-8"><title>SENTINEL-IR · demo fixture server</title>
+<style>
+ body{{font:14px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace;background:#0d1117;color:#c9d1d9;margin:2rem auto;max-width:60rem;padding:0 1rem}}
+ h1{{font-size:1.15rem;color:#e6edf3}} h2{{font-size:.95rem;color:#7ee787;margin-top:2rem}}
+ .note{{border-left:3px solid #d29922;padding:.5rem .8rem;background:#161b22;color:#e3b341}}
+ table{{border-collapse:collapse;width:100%;margin-top:.5rem}}
+ th,td{{text-align:left;padding:.3rem .5rem;border-bottom:1px solid #21262d;font-weight:400}}
+ th{{color:#8b949e}} code{{color:#a5d6ff}} pre{{background:#161b22;padding:.7rem;border:1px solid #21262d;overflow:auto}}
+ a{{color:#58a6ff}}
+</style>
+<h1>SENTINEL-IR — offline <em>demo fixture</em> server (mock GeoIP / reputation)</h1>
+<p class="note"><strong>This is not the product's UI.</strong> SENTINEL-IR is a terminal
+agent; this tiny server exists only so an air-gapped demo or CI run can exercise the real
+HTTP code paths (<code>urllib</code> + JSON parsing) without a network. Nothing is stored
+here, and no email content is ever served — only the synthetic rows below.</p>
+
+<h2>Routes</h2>
+<table><tr><th>path</th><th>stands in for</th></tr>
+<tr><td><code>GET /json/&lt;ip&gt;</code>, <code>/geo/&lt;ip&gt;</code></td><td>ip-api.com (fixture, else generic labelled answer for RFC5737 ranges)</td></tr>
+<tr><td><code>GET /&lt;ip&gt;/json</code></td><td>ipinfo.io</td></tr>
+<tr><td><code>GET /api/v3/files/&lt;sha256&gt;</code>, <code>/api/v3/domains/&lt;d&gt;</code></td><td>VirusTotal v3 (fixed demo verdicts, no real lookups)</td></tr>
+<tr><td><code>GET /api/v2/check?ipAddress=&lt;ip&gt;</code></td><td>AbuseIPDB</td></tr>
+<tr><td><code>GET /health</code>, <code>GET /fixtures</code></td><td>liveness / the raw fixture table as JSON</td></tr></table>
+
+<h2>Synthetic GeoIP fixtures ({len(rows)})</h2>
+<table><tr><th>key</th><th>ip</th><th>city</th><th>cc</th><th>radius</th><th>timezone</th></tr>
+{''.join(rows)}
+</table>
+<p>Every answer is labelled as synthetic (<code>Reserved (demo fixture)</code>,
+<code>XX</code>), which is the point: the corpus uses loopback and RFC5737 documentation
+space so a demo can never poke a stranger.</p>
+
+<h2>Drive an investigation from a terminal</h2>
+<pre>python -m cybersecurity_agent mock-apis --port {port}            # ← this server
+python -m cybersecurity_agent investigate samples/phishing_obvious.eml --demo --no-llm \\
+  --geo-base-url {base} --reputation-base-url {base} --geoip-allow-private</pre>
+<p>Exit codes are the verdict: <code>0</code> SAFE · <code>1</code> SUSPICIOUS ·
+<code>2</code> MALICIOUS. Case output lands in <code>runs/&lt;case&gt;/report.md</code>.</p>
+"""
+
+
+def serve_mock(bind: str, port: int, fixtures: Optional[Path] = None, *,
+               allow_public: bool = False) -> None:
     table = dict(DEMO_FIXTURES)
     if fixtures and fixtures.exists():
         table.update(json.loads(fixtures.read_text(encoding="utf-8")))
+    if bind not in {"127.0.0.1", "localhost", "::1"} and not allow_public:
+        raise SystemExit(
+            "[mock-apis] refusing to bind a non-loopback address: this is a demo fixture "
+            "server, not a service. Pass --allow-public if you really mean it (e.g. a "
+            "sandboxed preview) — it serves only synthetic GeoIP rows, never case data.")
     if bind not in {"127.0.0.1", "localhost", "::1"}:
-        raise SystemExit("[mock-apis] refusing to bind a non-loopback address (it is a demo server, not a service)")
+        print(f"[mock-apis] WARNING: listening on {bind}:{port} — reachable by anyone who can "
+              "route to this host. Synthetic fixtures only; no case data, no credentials.",
+              file=sys.stderr)
 
     class Handler(BaseHTTPRequestHandler):
         def _send(self, obj: Any, code: int = 200) -> None:
@@ -154,8 +231,21 @@ def serve_mock(bind: str, port: int, fixtures: Optional[Path] = None) -> None:
             self.end_headers()
             self.wfile.write(body)
 
+        def _send_html(self, markup: str, code: int = 200) -> None:
+            body = markup.encode()
+            self.send_response(code)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("X-Sentinel-Mock", "1")
+            self.end_headers()
+            self.wfile.write(body)
+
         def do_GET(self) -> None:  # noqa: N802
             path = self.path.split("?")[0]
+            if path in {"/", "/index.html"}:
+                return self._send_html(mock_index_html(table, bind=bind, port=port))
+            if path == "/fixtures":
+                return self._send(table)
             if path.startswith("/json/") or path.startswith("/geo/"):
                 key = "/json/" + path.split("/", 2)[-1]
                 if key in table:
@@ -184,8 +274,6 @@ def serve_mock(bind: str, port: int, fixtures: Optional[Path] = None) -> None:
 
         def log_message(self, fmt: str, *a: Any) -> None:
             sys.stderr.write("[mock-apis] " + (fmt % a) + "\n")
-
-    import sys
 
     ThreadingHTTPServer((bind, port), Handler).serve_forever()
 
