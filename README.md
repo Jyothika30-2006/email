@@ -154,8 +154,14 @@ python -m cybersecurity_agent investigate samples/phishing_obvious.eml --offline
 python -m cybersecurity_agent investigate samples/tor_exit_legit.eml \
         --model qwen2.5:7b-instruct --steps 10 --timeout 10 --kill-key x
 ```
-You see, live in the terminal: the agent's reasoning lines, a colour-coded risk gauge,
-per-tool `▲ +n pts` rows, the `[CONFIRM_NEEDED]` gate, the final verdict block, and then:
+You see, live in the terminal: the agent's reasoning lines, two progress bars (a colour-coded
+risk gauge whose threshold ticks are drawn *into* the bar — `·` = verdict floor still ahead,
+`┼` = passed — and an evidence-coverage bar), per-tool `▲ +n pts` rows, the `[CONFIRM_NEEDED]`
+gate, the final verdict block, and then:
+
+```text
+  gauge ████████┼░░░░░░░░·░░░░░░░░   32.4/100 · tools 3/8     ← just crossed the SUSPICIOUS floor
+```
 ```
 runs/<case>/report.md       full forensic report (transcript + verdict + evidence)
 runs/<case>/run.json        machine-readable: case/events/results/verdict/chain/signals
@@ -355,7 +361,7 @@ python -m cybersecurity_agent investigate samples/gmail_bec_subtle.eml --demo   
 
 ## 12. Tests & demo harness
 ```bash
-.venv/bin/python -m pytest tests -q          # 96 tests in ~6 s, no network egress needed
+.venv/bin/python -m pytest tests -q          # 101 tests in ~6 s, no network egress needed
 python -m cybersecurity_agent selftest       # 5 checks: 9-tool registry, whitelist refuses
                                              # 'shell', timeout raises, fuse math, and a
                                              # deliberately tampered ledger is detected
@@ -367,7 +373,9 @@ timed-out answer must deny *and be recorded* — covered by test and reproducibl
 `printf "no\n" |`), kill-switch abort (plus sandbox teardown on abort), GeoIP consensus vs disagreement, Tor
 listed/NXDOMAIN/broken-DNS handling, hash-chain tamper detection, chain-of-custody drift and its
 confidence cap, the EICAR/macro/high-entropy static scan, sandbox argv policy, keccak/secp256k1/
-RLP/ABI published vectors, `EvidenceChain.sol` ↔ ABI ↔ logger selector agreement, and
+RLP/ABI published vectors, `EvidenceChain.sol` ↔ ABI ↔ logger selector agreement, the live
+gauge being a real monotone bar whose threshold markers are semantic (so a non-TTY demo log
+still shows *how far* a case was from flipping verdict), and
 end-to-end runs of all four samples through both the deterministic engine and a stubbed LLM
 transport (10 tests in `tests/test_agent_end_to_end.py`).
 
@@ -428,13 +436,15 @@ cybersecurity_agent/            (≈7.7k lines; stdlib + rich + dnspython only)
 ├── llm/
 │   ├── ollama_client.py   /api/chat tool-calling; native + JSON protocol parsers; retries
 │   └── deterministic.py   offline planner (the no-LLM floor)
-└── ui/console.py          rich Live layout, risk gauge, [CONFIRM_NEEDED] panel, kill-switch key
+└── ui/console.py          rich Live layout, risk + coverage progress bars,
+                           [CONFIRM_NEEDED] panel, kill-switch key (bars also render in the
+                           non-TTY demo log and as a `gauge` column in report.md)
 
 samples/                   4 .eml (clean · obvious phishing · subtle Gmail BEC · Tor exit)
   ├── payloads/            macro stub / renamed-EXE / EICAR (all harmless) + fixtures/
   └── fixtures/            dns_fixtures.json · tor_exit_ips.txt (demo/CI determinism)
 scripts/                   generate_samples.py · setup.sh · compile_contract.sh
-tests/                     96 tests (1 660 lines) — see §12
+tests/                     101 tests (1 726 lines) — see §12
 config/default.env.example every SENTINEL_* knob, commented
 docs/ARCHITECTURE.md       module boundaries, trust model, the three brains, extension points
 docs/FORENSIC_METHODOLOGY.md  weights, fusion math, confidence semantics, how to read a report

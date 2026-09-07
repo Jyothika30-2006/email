@@ -2,7 +2,8 @@
 
 Renders, updating in place:
   * header: case, model/brain badge, elapsed, kill-switch status (SAFETY #8)
-  * a colour-coded risk gauge (0–100) that moves after every tool result
+  * two live progress bars: the colour-coded risk gauge (0–100, verdict floors marked
+    inside the bar) and the evidence-coverage bar (tool results collected vs expected)
   * the origin/geolocation honesty panel (source kind + confidence + radius)
   * a per-step tool table (✓/✗/⏱ + signal delta)
   * the agent's streaming reasoning ("THINK") lines
@@ -31,9 +32,25 @@ try:
 except ImportError:  # pragma: no cover
     RICH_OK = False
 
-from ..risk import severity_color
+from ..risk import severity_bar, severity_color
 
 # ─────────────────────────────────────────────────────────────────────────────
+
+
+def gauge_string(fraction: float, width: int = 26, ticks: tuple[float, ...] = ()) -> str:
+    """A text progress bar for a 0.0–1.0 fraction. `ticks` are positions drawn on top of
+    it (`┼` already reached, `·` still ahead), so the frame can show *where a threshold
+    sits* and not merely how full the bar is — the same marker convention as
+    `risk.severity_bar`. Plain text on purpose: it has to survive a dumb terminal, the
+    non-TTY demo log and `report.md`."""
+    width = max(4, int(width))
+    filled = int(round(width * max(0.0, min(1.0, float(fraction)))))
+    chars = ["█"] * filled + ["░"] * (width - filled)
+    for t in ticks:
+        i = min(width - 1, max(0, int(round(width * float(t)))))
+        chars[i] = "┼" if i < filled else "·"
+    return "".join(chars)
+
 
 
 @dataclass
@@ -58,6 +75,8 @@ class ConsoleUI:
         self.steps: list[StepRow] = []
         self.thoughts: list[str] = []
         self.badges: dict[str, str] = {}
+        self.expected: int = 0              # denominator of the coverage bar (0 = unknown)
+        self.header = ""                    # set by start(); _frame() must not depend on it
         self.t0 = time.monotonic()
         self._live: Optional["Live"] = None
         self.console = Console(highlight=False, soft_wrap=False, width=110)
@@ -92,9 +111,20 @@ class ConsoleUI:
         parts = [Panel(Text.from_markup(head), border_style="blue", expand=False, title="SENTINEL-IR")]
 
         gauge_color = severity_color(self.risk)
+        exp, done = self.expected, self.done_steps
         risk_text = Text()
+        # Two progress bars, both as plain Text so they survive a non-rich terminal:
+        # the risk gauge (coloured by severity, threshold ticks drawn in) and the
+        # evidence-coverage bar the confidence formula is actually scored on.
+        risk_text.append(f"{severity_bar(self.risk)}  ", style=gauge_color)
         risk_text.append(f"risk {self.risk:5.1f}/100", style=f"bold {gauge_color}")
-        risk_text.append(f"    confidence {self.confidence:4.1f}%", style="bold white on grey23" if self.confidence else "dim")
+        risk_text.append(f"    confidence {self.confidence:4.1f}%",
+                         style="bold white on grey23" if self.confidence else "dim")
+        if exp:
+            risk_text.append(f"\n{gauge_string(min(1.0, done / max(1, exp)), width=40)}  ", style="cyan")
+            risk_text.append(f"evidence {done}/{exp} tool results · "
+                             f"floors: ≥30 SUSPICIOUS, ≥65 MALICIOUS (+1 strong indicator)",
+                             style="dim")
         parts.append(Panel(risk_text, border_style=gauge_color, expand=False, title="running score"))
 
         if self.badges:
@@ -141,7 +171,29 @@ class ConsoleUI:
             self.risk = risk
             if confidence is not None:
                 self.confidence = confidence
+            conf = self.confidence
+            exp, done = self.expected, self.done_steps
+        if self.quiet:
+            # The same gauge the live frame shows, as one line per tool result, so a
+            # non-TTY demo/CI run still prints a moving progress bar instead of a number.
+            tail = f" · conf {conf:4.1f}%" if conf else ""
+            if exp:
+                tail += f" · tools {done}/{exp}"
+            self.console.print(f"  [dim]gauge[/dim] {severity_bar(risk)}  [bold]{risk:5.1f}/100[/bold]{tail}")
+        else:
+            self._tick()
+
+    def set_expected(self, n: int) -> None:
+        """How many tool results a complete investigation needs — the denominator of the
+        coverage bar. Set by the controller from `agent.EXPECTED_FAMILIES`, so the bar
+        measures the same thing the confidence formula's coverage term does."""
+        with self._lock:
+            self.expected = max(0, int(n))
         self._tick()
+
+    @property
+    def done_steps(self) -> int:
+        return len([s for s in self.steps if s.status != "…"])
 
     def add_thought(self, text: str) -> None:
         text = text.strip()
@@ -169,6 +221,7 @@ class ConsoleUI:
     def verdict_panel(self, *, verdict: str, confidence: float, risk: float, bullets: list[str], meta: list[str]) -> None:
         style = {"MALICIOUS": "red", "SUSPICIOUS": "yellow", "SAFE": "green"}.get(verdict, "white")
         tree = Tree(f"[bold {style}]{verdict}[/bold {style}]  ·  confidence [bold]{confidence:.1f}%[/bold]  ·  risk [bold]{risk:.1f}/100[/bold]")
+        tree.add(Text(f"{severity_bar(risk)}  {risk:5.1f}/100  (floors: 30 suspicious · 65 malicious)", style="dim"))
         for b in bullets:
             tree.add(Text.from_markup(b))
         body = [tree]

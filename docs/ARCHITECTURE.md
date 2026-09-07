@@ -215,8 +215,9 @@ chain. That is what "blockchain is for chain-of-custody, never for detection" me
 ## 8. UI (`ui/console.py`)
 
 `rich` Live layout: header badges (`evidence`, `sha256…`, `brain=…`, `sandbox=…`), a
-scrolling THINK/ACT/OBSERVE transcript with per-step `▲ +n pts`, a colour-coded risk gauge
-(green→yellow→orange→red), and the `[CONFIRM_NEEDED]` panel that reads `yes` from the TTY
+scrolling THINK/ACT/OBSERVE transcript with per-step `▲ +n pts`, **two live progress bars**
+in the "running score" panel (risk 0–100 coloured green→yellow→orange→red, plus
+evidence-coverage `done/expected` from `agent.EXPECTED_FAMILIES`), and the `[CONFIRM_NEEDED]` panel that reads `yes` from the TTY
 with a timeout (no answer ⇒ DENIED). Non-TTY/`--demo` auto-approves *and records that it
 did* (`gate: auto (demo/--yes)` in the report header). The kill-switch reader is a daemon
 thread on the raw TTY (`tty.setraw` in a subshell-safe way): it sets `threading.Event`

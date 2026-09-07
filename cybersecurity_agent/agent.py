@@ -117,6 +117,7 @@ class Agent:
         self.ui.start(header=f"evidence: {self.eml_path.name}  ·  sha256 {sha[:16]}…  ·  "
                              f"brain={self.brain}  ·  sandbox={'docker' if docker_ok else 'fallback: ' + docker_why}")
         self.ui.set_badge("sandbox", "docker available" if docker_ok else "subprocess-limited (no docker)")
+        self.ui.set_expected(len(EXPECTED_FAMILIES))     # denominator for the coverage bar
         self.ui.set_badge("safety", f"timeout {self.cfg.tool_timeout_s:.0f}s · gate {'on' if self.cfg.require_confirmation and not self.auto_confirm else 'auto (--yes/--demo)'} · kill '{self.switch.key}'")
 
         parsed = eml_mod.parse_bytes(raw, path=str(self.eml_path))

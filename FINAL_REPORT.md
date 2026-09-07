@@ -1,7 +1,7 @@
 # SENTINEL-IR — build report (what was asked, what exists, what was measured)
 
 Repo: `/home/user/email` · package `cybersecurity_agent/` · 7.7k lines of Python +
-1.66k lines of tests (96 tests) + 2 shell scripts + 1 Solidity contract + 4 sample `.eml`.
+1.73k lines of tests (101 tests) + 2 shell scripts + 1 Solidity contract + 4 sample `.eml`.
 Everything below was verified in this sandbox on 2026-09-07; commands are copy-pasteable.
 
 ---
@@ -34,7 +34,7 @@ Legend: ✅ implemented & verified here · ⚠️ implemented but limited by thi
 | Requirement | Where | Notes |
 |---|---|---|
 | Local LLM layer, no cloud API, no data leakage | `llm/ollama_client.py` (host is `OLLAMA_HOST`, default `127.0.0.1:11434`) | `--offline` = zero outbound HTTP; UI header states `LLM OFFLINE → deterministic engine` |
-| Agent controller + rich live UI (progress, coloured risk, streaming reasoning) | `ui/console.py`, `agent.py` | Live transcript + gauge bands green→red; non-TTY falls back to a plain print mode |
+| Agent controller + rich live UI (progress bars, coloured risk, streaming reasoning) | `ui/console.py`, `risk.severity_bar`, `llm/ollama_client.py` (`stream: True`) | Live transcript + **two progress bars** (risk, drawn with `·`/`┼` verdict-floor markers, and evidence coverage `n/8`) that also print in the non-TTY demo log and as a `gauge` column in `report.md` |
 | Running risk score updated after **every** tool call | `risk.RiskState.add_all` (re-fuses the whole list, returns `(delta, explanation)`) | no incremental `+=` anywhere |
 | Human confirmation before any file-touching tool (type `yes`) | `ui/console.py:199` `ask_confirmation`; `agent.py:318` records `gate` events | harness *forces* `[CONFIRM_NEEDED]` even if the model forgets to ask (`agent.py:314`) |
 | Single-keypress kill-switch (abort agent + destroy sandbox) | `safety.KillSwitch`, `docker_runner.register_kill_teardown` | `--kill-key x`; abort ⇒ `AbortedError`, partial state still written to the report |
@@ -107,7 +107,7 @@ $ python -m cybersecurity_agent selftest
 → ✅ all safety invariants hold (9 tools registered, 'shell' refused, timeout raises,
     ledger tamper detected)
 $ .venv/bin/python -m pytest tests -q
-→ 96 passed in ~6 s, no network egress needed
+→ 101 passed in 6.1 s, no network egress needed
 ```
 
 ---
@@ -173,4 +173,4 @@ $ .venv/bin/python -m pytest tests -q
 3. `docs/FORENSIC_METHODOLOGY.md` — the full weight table, fusion math, the origin ladder,
    what each report line means, and what "unobserved" implies.
 4. `cybersecurity_agent/agent.py` → `tools/dispatch.py` → `risk.py` → `blockchain/hashchain.py`.
-5. `tests/` (9 files, 96 tests) — each test name states the claim it defends.
+5. `tests/` (10 files, 101 tests) — each test name states the claim it defends.

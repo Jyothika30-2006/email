@@ -221,6 +221,28 @@ def severity_color(score: float) -> str:
     return "green"
 
 
+SEVERITY_THRESHOLDS = (30.0, 65.0)      # SUSPICIOUS floor, MALICIOUS floor (see classify)
+
+
+def severity_bar(score: float, width: int = 26, thresholds: tuple[float, ...] = SEVERITY_THRESHOLDS) -> str:
+    """An ASCII progress bar for the running risk score, used by the live `rich` frame,
+    the non-TTY demo/CI log and `report.md` — so the gauge is a real bar, not just a number.
+
+    The verdict thresholds are drawn *into* the bar: `┼` once the score has passed that
+    floor, `·` while it is still ahead of us. That way a reader of a plain log sees how
+    far a case sat from changing verdict, and the marker is semantic (driven by the score,
+    not by rounding of the fill).
+    """
+    width = max(4, int(width))
+    pct = max(0.0, min(100.0, float(score)))
+    filled = int(round(width * pct / 100.0))
+    chars = ["█"] * filled + ["░"] * (width - filled)
+    for t in thresholds:
+        i = min(width - 1, max(0, int(round(width * float(t) / 100.0))))
+        chars[i] = "┼" if pct >= float(t) else "·"
+    return "".join(chars)
+
+
 def summary_lines(signals: list[RiskSignal], limit: int = 12) -> list[str]:
     """Evidence bullets for the final verdict block (rule #7 of the system prompt)."""
     ranked = sorted(

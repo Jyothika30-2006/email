@@ -13,6 +13,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
+from ..risk import severity_bar
+
 HEADER = """# SENTINEL-IR — forensic investigation report
 
 | field | value |
@@ -47,6 +49,11 @@ def render(case: dict[str, Any], events: list[dict[str, Any]], results: list[dic
     lines.append("\n## 1 · Verdict\n")
     lines.append(f"**{verdict['verdict']}** — confidence **{verdict['confidence']:.1f}%**, "
                  f"ensemble risk score **{verdict['risk']:.1f}/100**.\n")
+    # The gauge is reproduced in the report so a reader can see how far the case sat
+    # from each verdict floor, without needing this software (`·` marks 30 and 65).
+    lines.append("```text\n" + severity_bar(verdict["risk"], width=40)
+                 + f"  {verdict['risk']:.1f}/100 → {verdict['verdict']}"
+                 "   (· = verdict floor still ahead, ┼ = passed; 30 SUSPICIOUS · 65 MALICIOUS)\n```\n")
     lines.append(verdict.get("summary", "").strip() + "\n")
 
     lines.append("\n### Evidence used to reach this verdict\n")
@@ -61,10 +68,18 @@ def render(case: dict[str, Any], events: list[dict[str, Any]], results: list[dic
     lines.append("\n### Origin & geolocation (honesty panel)\n")
     lines.append("```text\n" + "\n".join(verdict.get("origin_lines") or ["(no origin data)"]) + "\n```\n")
 
-    lines.append("\n## 2 · Risk score evolution\n\n| step | tool | status | Δ score | running | note |\n|---|---|---|---|---|---|\n")
+    # NOTE: no trailing "\n" here — `lines` are joined with "\n", so a trailing newline
+    # would insert a blank line between the separator row and the data rows, which
+    # ends the table for a markdown renderer.
+    lines.append("\n## 2 · Risk score evolution\n\n| step | tool | status | Δ score | running | gauge | note |"
+                 "\n|---|---|---|---|---|---|---|")
     for r in results:
+        try:
+            bar = severity_bar(float(r.get("risk_after")), width=12)
+        except (TypeError, ValueError):
+            bar = "—"
         lines.append(f"| {r.get('n', '')} | `{r.get('tool', '')}` | {r.get('status', '')} | {r.get('delta', '')} | "
-                     f"{r.get('risk_after', '')} | {(r.get('summary') or '')[:110].replace('|', '/')} |")
+                     f"{r.get('risk_after', '')} | {bar} | {(r.get('summary') or '')[:110].replace('|', '/')} |")
 
     lines.append("\n## 3 · Tool observations (full structured output)\n")
     for r in results:
