@@ -44,7 +44,9 @@ def tool_redact_reply(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     token = secrets.token_urlsafe(9)
     host = (args.get("trace_host") or "127.0.0.1:8099").strip()
     embed = args.get("embed_pixel")
-    embed = True if embed is None else bool(embed)
+    # `--no-pixel` (agent → ctx.state) is the operator's opt-out; an explicit
+    # `embed_pixel` argument from the model wins over it, either way.
+    embed = (not ctx.state.get("no_pixel", False)) if embed is None else bool(embed)
 
     sender = redact_addresses(parsed.envelope.get("from", "")) or "the reported sender"
     subject = (parsed.envelope.get("subject", "") or "").strip()
@@ -88,7 +90,10 @@ Operational notes for the analyst:
 
     captured: list[dict[str, Any]] = []
     for hit in ctx.extra_iocs or []:
-        if hit.get("case") in {case_id, case_tag} or True:
+        # A hit file may be shared across cases; only lines tagged for THIS case (or
+        # untagged, which is what a single-case listener writes) count as evidence here.
+        tag = str(hit.get("case") or "").strip()
+        if tag in {"", case_id, case_tag}:
             captured.append(hit)
     signals: list[RiskSignal] = []
     if captured:

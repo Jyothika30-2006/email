@@ -36,6 +36,13 @@ PIPELINE: list[str] = [
 ]
 
 
+# Origin kinds that mean "the sender's own line is not in this message". Fallback (d)
+# exists for exactly those cases — a lure-server trace (phishing_infrastructure) says
+# nothing about where the sender sat, so the draft is still the right thing to offer.
+HIDDEN_SENDER_KINDS = frozenset(
+    {"unrecovered", "webmail_relay_only", "phishing_infrastructure", "messageid_rdns"})
+
+
 class DeterministicEngine:
     """Rule-based planner + narrator. `is_llm = False` (shown in the UI badge)."""
 
@@ -70,7 +77,7 @@ class DeterministicEngine:
                     continue
                 if runs.get(tool, 0) >= 1:
                     continue
-            if tool == "redact_reply" and origin.get("status") != "unrecovered":
+            if tool == "redact_reply" and origin.get("source_kind") not in HIDDEN_SENDER_KINDS:
                 continue
             if tool in {"resolve_origin", "geolocate_ip", "check_reputation"} and runs.get(tool, 0) >= 1 and tool in done:
                 # second pass only makes sense when new data arrived
@@ -106,7 +113,9 @@ class DeterministicEngine:
             "static_file_scan": "[CONFIRM_NEEDED] I want to read the attachment bytes for static analysis inside the sandbox. "
                                 "Reasoning: header/URL evidence alone cannot clear an attachment; magic, entropy, OLE/PDF "
                                 "structure may reveal a renamed executable. Nothing will be executed.",
-            "redact_reply": f"sender IP unrecovered (webmail relay only) → offering a human-gated reply draft with optional pixel (fallback 3d)",
+            "redact_reply": f"sender address is hidden by {origin.get('source_kind', 'webmail relays')} → "
+                            f"offering a human-review reply draft with an optional origin-capture pixel "
+                            f"(fallback 3d; {'--no-pixel → no pixel embedded' if ctx.state.get('no_pixel') else 'nothing is sent by this tool'})",
         }
         return table.get(tool, f"running {tool}").replace("{nth}", nth)
 

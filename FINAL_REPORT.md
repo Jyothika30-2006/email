@@ -1,7 +1,7 @@
 # SENTINEL-IR — build report (what was asked, what exists, what was measured)
 
 Repo: `/home/user/email` · package `cybersecurity_agent/` · 7.7k lines of Python +
-1.73k lines of tests (103 tests) + 2 shell scripts + 1 Solidity contract + 4 sample `.eml`.
+1.82k lines of tests (106 tests) + 2 shell scripts + 1 Solidity contract + 4 sample `.eml`.
 Everything below was verified in this sandbox on 2026-09-07; commands are copy-pasteable.
 
 ---
@@ -76,7 +76,7 @@ Legend: ✅ implemented & verified here · ⚠️ implemented but limited by thi
 ```
 samples/clean_newsletter.eml   → SAFE          risk  23.5/100   confidence 76.5%   exit 0
 samples/phishing_obvious.eml   → MALICIOUS     risk  99.0/100   confidence 90.1%   exit 2
-samples/gmail_bec_subtle.eml   → SUSPICIOUS    risk  33.1/100   confidence 72.4%   exit 1
+samples/gmail_bec_subtle.eml   → SUSPICIOUS    risk  33.1/100   confidence 76.1%   exit 1
 samples/tor_exit_legit.eml     → SAFE          risk  23.8/100   confidence 86.3%   exit 0
 evidence chain: 4 blocks → ✅ links + hashes consistent
 ```
@@ -107,7 +107,7 @@ $ python -m cybersecurity_agent selftest
 → ✅ all safety invariants hold (9 tools registered, 'shell' refused, timeout raises,
     ledger tamper detected)
 $ .venv/bin/python -m pytest tests -q
-→ 103 passed in 6.1 s, no network egress needed
+→ 106 passed in 6.5 s, no network egress needed
 ```
 
 ---
@@ -121,7 +121,7 @@ $ .venv/bin/python -m pytest tests -q
 2. **Confidence is orthogonal to risk.** `confidence_score()` counts *provenance and
    coverage*, never scariness, and is then hard-capped: no origin IP ⇒ ≤58 %; IP but no usable
    GeoIP ⇒ ≤68 %; custody broken ⇒ ≤35 %. Calibrated effect: `phishing_obvious` 90.1 % vs
-   `gmail_bec` 72.4 % at *lower* risk but similar evidence quality.
+   `gmail_bec` 76.1 % at *lower* risk but similar evidence quality.
 3. **Tor is context, not conviction** — `tor_exit` +2.20 weight, NXDOMAIN ⇒ *no* signal,
    DNS failure ⇒ "unknown" signal; the fixture path is always labelled `simulated` and
    scored lower (52 vs 85) because a fixture proves our code, not the world.
@@ -173,4 +173,4 @@ $ .venv/bin/python -m pytest tests -q
 3. `docs/FORENSIC_METHODOLOGY.md` — the full weight table, fusion math, the origin ladder,
    what each report line means, and what "unobserved" implies.
 4. `cybersecurity_agent/agent.py` → `tools/dispatch.py` → `risk.py` → `blockchain/hashchain.py`.
-5. `tests/` (10 files, 103 tests) — each test name states the claim it defends.
+5. `tests/` (10 files, 106 tests) — each test name states the claim it defends.

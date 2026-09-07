@@ -242,9 +242,13 @@ def tool_resolve_origin(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
                                   explanation=f"Date-header offset {tz['offset']} is consistent with {tz['candidate_region']} (soft signal: client-configurable, trivially spoofable)",
                                   source="resolve_origin"))
 
-    # (d)/(e) availability notes — surfaced, never auto-invoked
-    finding.notes.append("fallback (d) tracking-pixel reply: available via redact_reply (human-sends-only); "
-                         "(e) LLM writing-style analysis: run by the reasoning layer, capped at 25% weight by design")
+    # (d)/(e) availability notes — surfaced, never auto-invoked. The numbers here are the
+    # real weights, not a rounded reassurance: (e) is one of the lowest-tier factors and is
+    # absent from risk.classify()'s strong-indicator set, so style can never convict alone.
+    finding.notes.append("fallback (d) tracking-pixel reply: available via redact_reply (human-sends-only, "
+                         "case confidence stays capped while origin is unrecovered); "
+                         "(e) LLM writing-style analysis: llm_style_indicator, weight 0.80, never a "
+                         "'strong indicator' in classify() — so style alone cannot reach MALICIOUS")
 
     ctx.state["origin"] = finding.as_dict()
     ctx.state["origin_confidence_ceiling"] = finding.confidence

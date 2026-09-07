@@ -127,6 +127,7 @@ class Agent:
             extra_iocs=_load_iocs(self.extra_ioc_file),
         )
         self.ctx.state["sandbox_mode"] = "docker" if docker_ok else ("denied" if self.cfg.sandbox_required else "subprocess-limited")
+        self.ctx.state["no_pixel"] = bool(self.no_pixel)   # honoured by redact_reply
         self._stage_attachments(parsed)
 
         # prompt-injection defense (#7): report, don't obey

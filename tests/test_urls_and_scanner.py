@@ -285,3 +285,76 @@ def test_mock_server_refuses_a_public_bind_unless_told_otherwise():
     with pytest.raises(SystemExit) as exc:
         serve_mock(bind="0.0.0.0", port=0)          # refuses before binding anything
     assert "--allow-public" in str(exc.value)
+
+
+# ── fallback (d): the reply draft, and the operator's --no-pixel opt-out ────────
+
+def _draft_ctx(tmp_path, *, state=None, extra_iocs=None):
+    from cybersecurity_agent.config import Config
+    from cybersecurity_agent.evidence import eml as eml_mod
+    from cybersecurity_agent.tools.base import ToolContext
+
+    raw = (b"From: \"M. R.\" <suspect@gmail.com>\r\nTo: victim@example.com\r\n"
+           b"Subject: private and confidential\r\nDate: Tue, 17 Nov 2026 21:31:04 +0530\r\n"
+           b"MIME-Version: 1.0\r\nContent-Type: text/plain; charset=\"utf-8\"\r\n\r\n"
+           b"please confirm the transfer\r\n")
+    case = tmp_path / "case"; case.mkdir(parents=True)
+    (case / "case.eml").write_bytes(raw)
+    parsed = eml_mod.parse_bytes(raw, path=case / "case.eml")
+    st = {"origin": {"source_kind": "phishing_infrastructure", "status": "fallback",
+                     "origin_confidence_ceiling": 62.0}}
+    st.update(state or {})
+    return ToolContext(cfg=Config(offline=True), case_dir=case, eml_path=case / "case.eml",
+                       raw_bytes=raw, parsed=parsed, state=st, extra_iocs=extra_iocs or [])
+
+
+def test_draft_embeds_a_pixel_unless_the_operator_opted_out(tmp_path):
+    from cybersecurity_agent.tools.redact_reply import tool_redact_reply
+
+    ctx_on = _draft_ctx(tmp_path / "on")
+    on = tool_redact_reply(ctx_on, {})
+    text_on = (ctx_on.case_dir / "reply_draft.html").read_text()
+
+    ctx_off = _draft_ctx(tmp_path / "off", state={"no_pixel": True})
+    off = tool_redact_reply(ctx_off, {})
+    text_off = (ctx_off.case_dir / "reply_draft.html").read_text()
+
+    assert "<img src=\"http://127.0.0.1:8099/open/" in text_on, "pixel embedded by default"
+    assert "img src" not in text_off, "--no-pixel must actually suppress the tag"
+    assert "NOT embedded — plain draft only" in text_off
+    assert "no pixel" in off.summary and "pixel embedded" in on.summary
+    assert "DO NOT SEND WITHOUT AUTHORIZATION" in text_off, "draft is never auto-sendable"
+    assert "•••" in text_off or "@gmail.com" not in text_off.split("original sender")[1][:120]
+
+
+def test_pixel_hits_from_another_case_are_not_credited_here(tmp_path):
+    """`--extra-ioc-file` can be shared across cases; only hits tagged for this case
+    (or untagged, i.e. written by a single-case listener) may add evidence."""
+    from cybersecurity_agent.tools.redact_reply import tool_redact_reply
+
+    mine = tool_redact_reply(_draft_ctx(tmp_path / "mine", extra_iocs=[{"path": "/open/x.gif"}]), {})
+    foreign = tool_redact_reply(_draft_ctx(tmp_path / "foreign",
+                                           extra_iocs=[{"path": "/open/x.gif", "case": "not-this-one"}]), {})
+    assert any(s.factor == "tracking_pixel_captured" for s in mine.signals)
+    assert not any(s.factor == "tracking_pixel_captured" for s in foreign.signals), \
+        "an unrelated case's hit must not raise this case's score"
+
+
+def test_planner_offers_the_draft_for_any_hidden_sender_kind(tmp_path):
+    from cybersecurity_agent.llm.deterministic import DeterministicEngine
+
+    class Ctx:
+        def __init__(self, kind):
+            self.state = {"origin": {"source_kind": kind, "status": "fallback", "ip": None},
+                          "geolocate": {}, "phishing_infra": []}
+            self.attachment_files = {}
+
+    history = [{"tool": t, "status": "✓"} for t in
+               ("parse_headers", "extract_urls", "resolve_origin", "geolocate_ip",
+                "check_tor_exit", "check_reputation")]
+    engine = DeterministicEngine()
+    offered = engine.next_action(Ctx("phishing_infrastructure"), history)
+    assert offered.get("tool_call", {}).get("name") == "redact_reply", \
+        "a lure-server trace does not reveal the sender: (d) is still the right offer"
+    closed = engine.next_action(Ctx("spf_client_ip"), history)
+    assert "final" in closed, "a genuine sender-side client-ip means no reply-baiting draft"

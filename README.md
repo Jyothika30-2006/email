@@ -192,7 +192,7 @@ loopback + RFC5737 documentation ranges + RFC2606 names, so no run can poke a st
 |---|---|---|
 | `clean_newsletter.eml` | honest sender, SPF/DKIM/DMARC pass, brand-matching https link | `SAFE` risk 23.5 · conf 76.5 % · `exit 0` |
 | `phishing_obvious.eml` | typosquat/homoglyph host, IP-literal http URL, `dmarc=fail`, credential form, **`<EMAIL_DATA>` breakout attempt** in an HTML comment, high-entropy "invoice.pdf" | `MALICIOUS` risk 99.0 · conf 90.1 % · `exit 2` |
-| `gmail_bec_subtle.eml` | **Gmail webmail sender** (relay-only), `+0530` date offset, Reply-To mismatch, lure-domain link, polite-archaic style | `SUSPICIOUS` risk 33.1 · conf 72.4 % · `origin=phishing_infrastructure` (ceiling 62 %) · `exit 1` |
+| `gmail_bec_subtle.eml` | **Gmail webmail sender** (relay-only), `+0530` date offset, Reply-To mismatch, lure-domain link, polite-archaic style | `SUSPICIOUS` risk 33.1 · conf 76.1 % · `origin=phishing_infrastructure` (ceiling 62 %) · 8/8 tools incl. the fallback-(d) draft · `exit 1` |
 | `tor_exit_legit.eml` | origin on a (fixture-labelled) Tor exit, everything authenticates | `SAFE` risk 23.8 · conf 86.3 % · prints `tor_exit` **with** "anonymized — NOT proof of guilt" |
 
 Regenerate the corpus (e.g. after editing a template): `python scripts/generate_samples.py`.
@@ -353,7 +353,11 @@ python -m cybersecurity_agent investigate samples/gmail_bec_subtle.eml --demo   
   `{ts, ip, path, tz, accept_language, user_agent}`; anything else gets a quiet `204` and is
   **not** logged, so preview bots and favicons don't create false hits.
 * Feeding hits back: `investigate … --extra-ioc-file runs/pixel-hits.jsonl` folds them in as
-  `tracking_pixel_captured` (+1.60).
+  `tracking_pixel_captured` (+1.60). Hits tagged for a *different* case are ignored, so one
+  shared hit log can't contaminate another investigation's evidence.
+* `--no-pixel` drafts the same reply with the capture tag left out (the draft's own header
+  states `NOT embedded — plain draft only`, and the tool result records which you chose), so
+  the "we didn't bait them" claim is provable from the case file rather than from your word.
 * Read the wording in the draft: a pixel reveals the IP/TZ of whatever client fetched it —
   which may be a proxy, CDN, or gateway. It is a lead for an investigation plan, never
   attribution of a human. Bind to `127.0.0.1` unless your incident owner authorised otherwise
@@ -361,7 +365,7 @@ python -m cybersecurity_agent investigate samples/gmail_bec_subtle.eml --demo   
 
 ## 12. Tests & demo harness
 ```bash
-.venv/bin/python -m pytest tests -q          # 103 tests in ~6 s, no network egress needed
+.venv/bin/python -m pytest tests -q          # 106 tests in ~6 s, no network egress needed
 python -m cybersecurity_agent selftest       # 5 checks: 9-tool registry, whitelist refuses
                                              # 'shell', timeout raises, fuse math, and a
                                              # deliberately tampered ledger is detected
@@ -450,7 +454,7 @@ samples/                   4 .eml (clean · obvious phishing · subtle Gmail BEC
   ├── payloads/            macro stub / renamed-EXE / EICAR (all harmless) + fixtures/
   └── fixtures/            dns_fixtures.json · tor_exit_ips.txt (demo/CI determinism)
 scripts/                   generate_samples.py · setup.sh · compile_contract.sh
-tests/                     103 tests (1 750 lines) — see §12
+tests/                     106 tests (1 823 lines) — see §12
 config/default.env.example every SENTINEL_* knob, commented
 docs/ARCHITECTURE.md       module boundaries, trust model, the three brains, extension points
 docs/FORENSIC_METHODOLOGY.md  weights, fusion math, confidence semantics, how to read a report
