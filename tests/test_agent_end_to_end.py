@@ -251,3 +251,51 @@ def test_closing_custody_check_detects_mid_case_mutation(tmp_path, monkeypatch):
                 {"backend": "hashchain", "file": "n/a"})
     assert "chain-of-custody broken" in md
     a.close()
+
+
+def test_a_planner_that_only_proposes_done_work_ends_the_loop(tmp_path, monkeypatch):
+    """Three 'skipped' answers in a row = the model is stalling on already-completed steps,
+    so the loop must close the pipeline and say why.
+
+    This path once incremented a counter that was never initialised, which turned a
+    boring stall into a NameError inside the controller. Found by `ruff check --select
+    F821` in CI; this test is why it stays fixed rather than just patched.
+    """
+    from cybersecurity_agent.agent import Agent
+
+    a = Agent(SAMPLES / "clean_newsletter.eml", demo=True, case_prefix=tmp_path,
+              cfg_overrides={"offline": True, "tool_timeout_s": 8.0, "max_agent_steps": 12,
+                             "require_confirmation": False, "auto_confirm": True})
+
+    def fake_step(name, args, *, thought="", confirm_requested=False):     # noqa: ARG001
+        a.results.append({"tool": name, "ok": True, "skipped": True, "summary": "nothing left here",
+                          "signals": [], "elapsed_ms": 1})
+
+    class StallEngine:
+        is_llm = True
+        name = "stub"
+
+        def probe(self, log=lambda s: None):
+            return True, "stub"
+
+        def prime(self, digest, block):
+            pass
+
+        def observe(self, tool, obs, risk_line):
+            pass
+
+        def next_action(self, ctx, history):                                # noqa: ARG002
+            return {"thought": "let me re-run what is already done",
+                    "tool_call": {"name": "parse_headers", "arguments": {}}}
+
+        def summarize(self, prompt):
+            return "stub narrative"
+
+    monkeypatch.setattr(a, "_run_step", fake_step)
+    a._select_brain = lambda: ("ollama:stub", "stubbed transport")
+    a.engine = StallEngine()
+    v = a.run()                                                             # must not raise
+    a.close()
+    assert any("already-completed steps" in str(e.get("text", "")) for e in a.events), \
+        "the stall must be recorded as a decision, not swallowed"
+    assert v["verdict"] in {"SAFE", "SUSPICIOUS"}

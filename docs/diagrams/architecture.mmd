@@ -1,0 +1,52 @@
+%%{init: {"theme": "dark", "flowchart": {"curve": "linear", "nodeSpacing": 45, "rankSpacing": 55}}}%%
+%% SENTINEL-IR — architecture, colour-coded by trust boundary.
+%% Keep this file and the copies in README.md / docs/ARCHITECTURE.md identical;
+%% `tests/test_docs_are_honest.py` checks the colour legend and the node list exist.
+%%
+%% Colours are semantic, not decorative:
+%%   red      attacker-controlled input (never trusted, never rendered unfiltered)
+%%   amber    the human-in-the-loop controls (sanitise, gate)
+%%   indigo   the harness — the only place anything is decided
+%%   sky      the optional local model
+%%   green    evidence and chain of custody
+%%   violet   optional ledger mirror
+%%   pink     display surfaces (can show status, can never speak for the case)
+%%   grey     optional / degraded paths, drawn dashed on purpose
+%%
+flowchart LR
+  classDef input fill:#450a0a,stroke:#f87171,color:#fecaca,stroke-width:2px
+  classDef control fill:#713f12,stroke:#fbbf24,color:#fef3c7
+  classDef core fill:#1e1b4b,stroke:#818cf8,color:#e0e7ff,stroke-width:2px
+  classDef brain fill:#0c4a6e,stroke:#38bdf8,color:#e0f2fe
+  classDef evidence fill:#052e16,stroke:#34d399,color:#d1fae5
+  classDef ledger fill:#2e1065,stroke:#a78bfa,color:#ede9fe
+  classDef display fill:#500724,stroke:#f472b6,color:#fce7f3
+  classDef optional fill:#111827,stroke:#9ca3af,color:#e5e7eb,stroke-dasharray:5 4
+
+  EML["suspicious .eml<br/>attacker-controlled text"]:::input
+  PARSE["evidence/eml.py<br/>Received hops · SPF/DKIM/DMARC<br/>URLs · attachments · Message-ID"]:::core
+  SANE["net.sanitize_untrusted()<br/>control tokens defanged, addresses redacted<br/>injection attempts recorded as a signal"]:::control
+  AGENT["agent.py — the controller<br/>THINK → CHOOSE → ACT → OBSERVE<br/>max 14 steps · kill-switch 'x' armed"]:::core
+  BRAIN["llm/ollama_client.py<br/>local Ollama tool-calling<br/>streams its reasoning into the UI"]:::brain
+  DET["llm/deterministic.py<br/>offline planner — labelled<br/>LLM OFFLINE, never faked"]:::brain
+  DISP["tools/dispatch.py — the ONLY exec path<br/>whitelist → needs → 15 s hard timeout → gate"]:::core
+  TOOLS["9 whitelisted tools<br/>parse_headers · extract_urls · resolve_origin<br/>geolocate_ip · check_tor_exit · check_reputation<br/>static_file_scan · hash_evidence · redact_reply"]:::core
+  GATE["human gate: CONFIRM_NEEDED<br/>type 'yes' · 120 s silence = DENY<br/>--yes/--demo auto-approve AND record it"]:::control
+  SBX["sandbox/docker_runner.py<br/>--network none · read-only mount · cap-drop ALL<br/>tmpfs · pids/cpus/memory · destroyed after each run<br/>no docker → rlimit subprocess, labelled"]:::optional
+  RISK["risk.py — log-odds fusion<br/>30 = SUSPICIOUS floor · 65 + 1 strong = MALICIOUS"]:::core
+  EVID["evidence/ — hashed BEFORE analysis<br/>report.md · run.json · evidence.json · audit.log"]:::evidence
+  CHAIN["blockchain/ — written after the verdict<br/>hash-chain (always) · Ganache mirror (optional)"]:::ledger
+  UI["ui/console.py — rich Live<br/>risk + coverage bars · step table · origin honesty panel"]:::display
+  PET["ui/pet.py · ui/care.py · status.py<br/>17 work-status moods · care reminders<br/>status.jsonl for external companions"]:::display
+  PIXEL["tools_dev.serve_pixel<br/>opt-in 1×1 listener, loopback"]:::optional
+
+  EML --> PARSE --> SANE --> AGENT
+  AGENT <--> BRAIN
+  AGENT <--> DET
+  AGENT --> DISP --> TOOLS --> RISK --> AGENT
+  TOOLS -. "file-touching tools only" .-> GATE
+  GATE -.-> SBX
+  SBX -.-> TOOLS
+  RISK --> EVID --> CHAIN
+  AGENT --> UI --> PET
+  TOOLS -. "fallback 3d, human sends" .-> PIXEL

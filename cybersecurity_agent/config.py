@@ -125,6 +125,11 @@ class Config:
     can never poke a stranger's host. Real investigations leave this False."""
 
     dns_fixtures: str = os.environ.get("SENTINEL_DNS_FIXTURES", "")
+    # With a fixture file loaded, absence from it = "no answer", rather than
+    # falling through to a real resolver. Keeps demos and CI hermetic; a DNSBL
+    # that sometimes answers is the one thing that can make two runs of the same
+    # sample differ, so it is the first thing to switch off.
+    dns_strict: bool = os.environ.get("SENTINEL_DNS_STRICT", "") == "1"
     """DEMO/TEST ONLY: JSON map of {name: [ips]} consulted before real DNS, so a
     network-restricted lab (or pytest) can exercise origin/Tor/reputation code
     paths. Every answer served from a fixture is labelled 'fixture' in the tool

@@ -8,10 +8,13 @@ import json
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from ..config import Config
 from ..models import RiskSignal
+
+if TYPE_CHECKING:                       # annotation only — importing safety at runtime
+    from ..safety import KillSwitch     # would re-create the cycle this module exists to avoid
 
 
 @dataclass
@@ -27,7 +30,7 @@ class ToolContext:
     evidence_hashes: dict[str, str] = field(default_factory=dict)
     switch: Optional[KillSwitch] = None
     approved_file_tools: bool = False
-    auto_confirm: bool = False        # --yes/--demo: recorded in the audit log as AUTO, not human
+    auto_confirm: bool = False        # --yes/--demo: audit.log gets gate_auto_approved, never a human approval
     extra_iocs: list[dict[str, Any]] = field(default_factory=list)
 
     def rel(self, path: Path | str) -> str:

@@ -1,8 +1,172 @@
 # ARCHITECTURE — module boundaries, data flow, and why each seam is where it is
 
-SENTINEL-IR is ~9.2k lines of Python in one package, a 9-module tool registry, and two
+SENTINEL-IR is 9 281 lines of Python in one package, a 9-module tool registry, and two
 optional back-ends (Docker, JSON-RPC chain). The design goal was not "few files"; it was
 **make every dangerous capability cross exactly one auditable boundary**.
+
+## 0. Diagrams (colour-coded)
+
+Three views of the same machine, and the colours carry meaning in all of them (the palette
+matches the README hero). The editable sources live in
+[`docs/diagrams/`](diagrams/) — `architecture.mmd`, `workflow.mmd`, `verdict.mmd` — and
+`tests/test_docs_are_honest.py` fails if the copies below ever drift from them, so these cannot
+rot into a pretty lie.
+
+### 0.1 Architecture, by trust boundary
+
+```mermaid
+%%{init: {"theme": "dark", "flowchart": {"curve": "linear", "nodeSpacing": 45, "rankSpacing": 55}}}%%
+%% SENTINEL-IR — architecture, colour-coded by trust boundary.
+%% Keep this file and the copies in README.md / docs/ARCHITECTURE.md identical;
+%% `tests/test_docs_are_honest.py` checks the colour legend and the node list exist.
+%%
+%% Colours are semantic, not decorative:
+%%   red      attacker-controlled input (never trusted, never rendered unfiltered)
+%%   amber    the human-in-the-loop controls (sanitise, gate)
+%%   indigo   the harness — the only place anything is decided
+%%   sky      the optional local model
+%%   green    evidence and chain of custody
+%%   violet   optional ledger mirror
+%%   pink     display surfaces (can show status, can never speak for the case)
+%%   grey     optional / degraded paths, drawn dashed on purpose
+%%
+flowchart LR
+  classDef input fill:#450a0a,stroke:#f87171,color:#fecaca,stroke-width:2px
+  classDef control fill:#713f12,stroke:#fbbf24,color:#fef3c7
+  classDef core fill:#1e1b4b,stroke:#818cf8,color:#e0e7ff,stroke-width:2px
+  classDef brain fill:#0c4a6e,stroke:#38bdf8,color:#e0f2fe
+  classDef evidence fill:#052e16,stroke:#34d399,color:#d1fae5
+  classDef ledger fill:#2e1065,stroke:#a78bfa,color:#ede9fe
+  classDef display fill:#500724,stroke:#f472b6,color:#fce7f3
+  classDef optional fill:#111827,stroke:#9ca3af,color:#e5e7eb,stroke-dasharray:5 4
+
+  EML["suspicious .eml<br/>attacker-controlled text"]:::input
+  PARSE["evidence/eml.py<br/>Received hops · SPF/DKIM/DMARC<br/>URLs · attachments · Message-ID"]:::core
+  SANE["net.sanitize_untrusted()<br/>control tokens defanged, addresses redacted<br/>injection attempts recorded as a signal"]:::control
+  AGENT["agent.py — the controller<br/>THINK → CHOOSE → ACT → OBSERVE<br/>max 14 steps · kill-switch 'x' armed"]:::core
+  BRAIN["llm/ollama_client.py<br/>local Ollama tool-calling<br/>streams its reasoning into the UI"]:::brain
+  DET["llm/deterministic.py<br/>offline planner — labelled<br/>LLM OFFLINE, never faked"]:::brain
+  DISP["tools/dispatch.py — the ONLY exec path<br/>whitelist → needs → 15 s hard timeout → gate"]:::core
+  TOOLS["9 whitelisted tools<br/>parse_headers · extract_urls · resolve_origin<br/>geolocate_ip · check_tor_exit · check_reputation<br/>static_file_scan · hash_evidence · redact_reply"]:::core
+  GATE["human gate: CONFIRM_NEEDED<br/>type 'yes' · 120 s silence = DENY<br/>--yes/--demo auto-approve AND record it"]:::control
+  SBX["sandbox/docker_runner.py<br/>--network none · read-only mount · cap-drop ALL<br/>tmpfs · pids/cpus/memory · destroyed after each run<br/>no docker → rlimit subprocess, labelled"]:::optional
+  RISK["risk.py — log-odds fusion<br/>30 = SUSPICIOUS floor · 65 + 1 strong = MALICIOUS"]:::core
+  EVID["evidence/ — hashed BEFORE analysis<br/>report.md · run.json · evidence.json · audit.log"]:::evidence
+  CHAIN["blockchain/ — written after the verdict<br/>hash-chain (always) · Ganache mirror (optional)"]:::ledger
+  UI["ui/console.py — rich Live<br/>risk + coverage bars · step table · origin honesty panel"]:::display
+  PET["ui/pet.py · ui/care.py · status.py<br/>17 work-status moods · care reminders<br/>status.jsonl for external companions"]:::display
+  PIXEL["tools_dev.serve_pixel<br/>opt-in 1×1 listener, loopback"]:::optional
+
+  EML --> PARSE --> SANE --> AGENT
+  AGENT <--> BRAIN
+  AGENT <--> DET
+  AGENT --> DISP --> TOOLS --> RISK --> AGENT
+  TOOLS -. "file-touching tools only" .-> GATE
+  GATE -.-> SBX
+  SBX -.-> TOOLS
+  RISK --> EVID --> CHAIN
+  AGENT --> UI --> PET
+  TOOLS -. "fallback 3d, human sends" .-> PIXEL
+```
+
+### 0.2 Workflow: one investigation, start to finish
+
+Custody first, then the loop, then the verdict, then the ledger — and the exit code is the verdict
+so the whole thing composes with `if`/`case` in a shell.
+
+```mermaid
+%%{init: {"theme": "dark", "sequence": {"actorMargin": 12, "boxMargin": 8, "width": 190}}}%%
+%% SENTINEL-IR — one investigation, end to end (the workflow diagram).
+%% Mirrors agent.py: custody first, injection defanged before the model sees anything,
+%% every tool through dispatch(), verdict then ledger, exit code = verdict.
+%%
+sequenceDiagram
+  autonumber
+  participant AN as Analyst · terminal
+  participant CT as Controller agent.py
+  participant BR as Brain Ollama or deterministic
+  participant DP as dispatch only exec path
+  participant TL as Whitelisted tool
+  participant SB as Sandbox docker or rlimit
+  participant EV as evidence and blockchain
+
+  AN->>CT: investigate sample.eml --demo
+  CT->>EV: sha256 + md5 of the file BEFORE any analysis (hash_evidence first)
+  CT->>CT: injection scan — tokens defanged, attempt recorded as a signal, never obeyed
+  CT->>CT: attachments staged read-only and hashed
+  loop THINK → CHOOSE → ACT → OBSERVE — max 14 steps, 15 s hard cap per tool
+    CT->>BR: headers digest + sanitised body excerpt
+    BR-->>CT: thought + tool_call name and args
+    CT->>DP: dispatch name and args
+    DP->>DP: whitelist — an invented tool is refused and scored, not run
+    alt file-touching tool and no --yes / --demo
+      DP->>AN: CONFIRM_NEEDED panel — type yes
+      AN-->>DP: yes → APPROVED · anything else or 120 s silence → DENIED
+    end
+    DP->>TL: run under timeout, kill-switch polled inside the tool
+    opt static_file_scan only
+      TL->>SB: read-only mount, no network, destroyed after
+      SB-->>TL: magic · entropy · OLE/PDF/PE structure · strings · optional YARA
+    end
+    TL-->>DP: ToolResult ok · summary · signals · data
+    DP-->>CT: result + gate decision + elapsed ms
+    CT->>CT: RiskState.add_all → risk 0-100 → repaint cat mood and both bars
+  end
+  CT->>AN: verdict + every supporting evidence line + gaps as unobserved
+  CT->>EV: report.md · run.json · evidence.json · audit.log · status.jsonl
+  CT->>EV: hash-chain block appended AFTER the verdict was shown
+  opt Ganache reachable and --chain-backend not hashchain
+    CT->>EV: on-chain mirror, 12 s bound, failure printed and non-fatal
+  end
+  CT-->>AN: exit code IS the verdict — 0 SAFE · 1 SUSPICIOUS · 2 MALICIOUS
+```
+
+### 0.3 How a pile of signals becomes a verdict *and* a confidence
+
+Two separate numbers, deliberately. Risk answers *how bad does this look*; confidence answers *how
+much of the case did we actually get to see*. A terrifying email with no origin data is reported
+loudly and with low confidence — that asymmetry is the whole honesty property.
+
+```mermaid
+%%{init: {"theme": "dark", "flowchart": {"curve": "stepAfter"}}}%%
+%% SENTINEL-IR — how a number becomes a verdict, and why confidence is separate from fear.
+%% Both halves are read straight out of risk.py: fuse() and confidence_score() plus the
+%% caps applied in agent._finalize(). Colours: amber = the human-readable threshold,
+%% red = capped/degraded path, green = clean, indigo = the maths.
+%%
+flowchart TD
+  classDef core fill:#1e1b4b,stroke:#818cf8,color:#e0e7ff,stroke-width:2px
+  classDef warn fill:#713f12,stroke:#fbbf24,color:#fef3c7
+  classDef bad fill:#450a0a,stroke:#f87171,color:#fecaca
+  classDef good fill:#052e16,stroke:#34d399,color:#d1fae5
+  classDef dim fill:#111827,stroke:#9ca3af,color:#e5e7eb,stroke-dasharray:5 4
+
+  SIG["RiskSignals from the tools<br/>53 weighted factors, −2.6 to 3.4 (mitigators are negative)<br/>each carries source · direction · strength · explanation"]:::core
+  SIG --> FUSE["fuse() · log-odds<br/>risk = 100 · sigmoid((Σ w·s − 2.4) / 1.8)<br/>mitigation multiplies, never zeroes<br/>floor keeps 15 % of positive mass"]:::core
+  FUSE --> R{"risk 0-100"}:::core
+  R -- "under 30" --> SAFE["SAFE · exit 0"]:::good
+  R -- "at least 30" --> SUS["SUSPICIOUS · exit 1"]:::warn
+  R -- "at least 65 with NO strong indicator" --> SUS
+  R -- "at least 65 AND one strong indicator" --> MAL["MALICIOUS · exit 2"]:::bad
+  STRONG["strong indicator = one of 10 named factors<br/>known_malware_hash · brand_mismatch · homoglyph_domain<br/>spf_fail · dmarc_fail · av_detections · file_type_mismatch<br/>pdf_active_content · embedded_macro · credential_harvest_form<br/>with direction positive and strength at least 45"]:::dim
+  MAL --- STRONG
+  NOTE1["a soft-signal pile cannot reach MALICIOUS alone —<br/>crying wolf on six mediocre hints is the failure mode this guards"]:::dim
+  SUS --- NOTE1
+
+  SIG --> CONF["confidence_score() — orthogonal to scariness"]:::core
+  CONF --> PARTS["0.45 · origin confidence, where origin confidence =<br/>max(geo confidence, source ceiling) × provenance<br/>resolved 1.00 · fallback 0.82 · degraded 0.68 · none 0.45<br/>+ 0.30 · evidence coverage done/8 families<br/>+ 0.25 · corroboration across tool families<br/>− 6 per timed-out tool · clamp 10 … 96"]:::core
+  PARTS --> CAPS{"hard caps — lowest one wins"}:::warn
+  CAPS -- "chain of custody broken" --> C35["cap 35 %"]:::bad
+  CAPS -- "no usable sender IP at all" --> C58["cap 58 %"]:::warn
+  CAPS -- "IP traced but not placed geographically" --> C68["cap 68 %"]:::warn
+  CAPS -- "origin ceiling by source kind" --> C82["received hop 82 % · SPF client-ip 78 %<br/>phishing infrastructure 62 % · Message-ID rDNS 34 %"]:::core
+  CAPS --> OUT["printed together, always:<br/>verdict · confidence % · risk/100 · gaps as unobserved"]:::good
+  C35 --> OUT
+  C58 --> OUT
+  C68 --> OUT
+  C82 --> OUT
+```
+
 
 ```
                      ┌───────────────────────────────────────────────────────┐

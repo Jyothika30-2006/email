@@ -140,3 +140,92 @@ def test_resolve_origin_reports_provider_edge_context(cfg, tmp_path, monkeypatch
     assert f["source_kind"] in {"webmail_relay_only", "unrecovered"}
     assert f["confidence"] <= 15, "provider edge context is not a location claim"
     clear_dns_fixture_cache()
+
+
+# ── DNS fixture semantics: hermetic answers, and the difference between ──────────
+#    "we asked and it is clean" and "we never got to ask"
+#
+# A live DNSBL query is the one thing that can make two runs of the same sample
+# differ on different networks, so the demo and CI pin DNS to the fixture file.
+# These tests are what keep that pinning honest.
+
+
+@pytest.fixture()
+def dns_at(tmp_path, monkeypatch):
+    """Point SENTINEL_DNS_FIXTURES at `blob`, and restore the session state afterwards
+    (the fixture cache is a module global, so leaving it loaded would leak into
+    later tests)."""
+    import json
+
+    from cybersecurity_agent.net import clear_dns_fixture_cache
+
+    def _write(blob):
+        f = tmp_path / "dns.json"
+        f.write_text(json.dumps(blob))
+        monkeypatch.setenv("SENTINEL_DNS_FIXTURES", str(f))
+        clear_dns_fixture_cache()
+        return f
+
+    yield _write
+    clear_dns_fixture_cache()
+
+
+def test_empty_fixture_entry_is_an_answer_not_a_miss(dns_at):
+    """`[]` means "the name exists and has no A record" (NODATA). For a blocklist that
+    is a *clean* answer; treating it as a miss would silently drop the mitigator."""
+    from cybersecurity_agent.net import dns_a
+
+    dns_at({"x.zen.spamhaus.org": []})
+    assert dns_a("x.zen.spamhaus.org") == ([], "NODATA")
+
+
+def test_string_fixture_entry_can_assert_nxdomain(dns_at):
+    from cybersecurity_agent.net import dns_a
+
+    dns_at({"99.0.2.192.ip-port.exitlist.torproject.org": "NXDOMAIN"})
+    assert dns_a("99.0.2.192.ip-port.exitlist.torproject.org") == ([], "NXDOMAIN")
+
+
+def test_strict_mode_replaces_the_resolver_with_a_declared_universe(dns_at, monkeypatch):
+    """With SENTINEL_DNS_STRICT=1 a name the fixture file does not mention must come back
+    as 'FIXTURE_ONLY' — never as whatever the network felt like answering today."""
+    from cybersecurity_agent import net
+
+    dns_at({"known.test": ["1.2.3.4"]})
+    monkeypatch.setenv("SENTINEL_DNS_STRICT", "1")
+    assert net.dns_a("never-mentioned.test") == ([], "FIXTURE_ONLY")
+    assert net.dns_a("known.test") == (["1.2.3.4"], "fixture"), "hits still come from the file"
+    assert net.fixtures_configured() is True
+
+
+def test_strict_mode_is_inert_when_no_fixture_file_is_loaded(tmp_path, monkeypatch):
+    """Strict is a *fixture* switch. Production never sets it, and a test that unsets the
+    fixture file must not end up blind: without a loaded file there is no declared
+    universe to be strict about, so a real lookup still happens."""
+    from cybersecurity_agent import net
+    from cybersecurity_agent.net import clear_dns_fixture_cache
+
+    monkeypatch.delenv("SENTINEL_DNS_FIXTURES", raising=False)
+    monkeypatch.setenv("SENTINEL_DNS_STRICT", "1")
+    clear_dns_fixture_cache()
+    assert net.fixtures_configured() is False
+    ips, err = net.dns_a("sentinel-dns-strict-probe.invalid")
+    assert ips == []
+    assert err != "FIXTURE_ONLY", "a missing fixture file must not fake an answer"
+    clear_dns_fixture_cache()
+
+
+def test_unresolved_blocklist_answer_is_never_reported_as_clean(dns_at, monkeypatch, cfg, tmp_path):
+    """The fail-open trap this mode exists to avoid: 'we could not ask' must not turn
+    into 'not listed'."""
+    from cybersecurity_agent.tools.base import ToolContext
+    from cybersecurity_agent.tools.check_reputation import _spamhaus_sbl
+
+    dns_at({})
+    monkeypatch.setenv("SENTINEL_DNS_STRICT", "1")
+    ctx = ToolContext(cfg=cfg, case_dir=tmp_path, eml_path=tmp_path / "x.eml",
+                      raw_bytes=b"", parsed={}, state={})
+    hit = _spamhaus_sbl(ctx, "192.0.2.55")
+    assert hit.ok is False, "an unanswered lookup is not a clean bill of health"
+    assert "not listed" not in str(hit.note).lower()
+    assert "fixture" in str(hit.note).lower() or "failed" in str(hit.note).lower()

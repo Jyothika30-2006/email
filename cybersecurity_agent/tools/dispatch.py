@@ -121,11 +121,3 @@ def dispatch(ctx: ToolContext, name: str, args: Optional[dict[str, Any]] = None,
     return result
 
 
-
-
-def describe_tools() -> str:
-    return "\n".join(t.doc_line() for t in REGISTRY.values())
-
-
-def ollama_tool_schemas() -> list[dict[str, Any]]:
-    return [t.to_ollama_schema() for t in REGISTRY.values()]

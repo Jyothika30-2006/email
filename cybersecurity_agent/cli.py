@@ -447,6 +447,19 @@ def cmd_selftest() -> int:
         failures.append("status hook accepted free text without marking it dropped")
     if not uniform or leaky or echoed:
         failures.append("display containment broken: the pet/hook could echo case text or resize the live frame")
+    # Care clock (README §12): the one surface that speaks *unprompted*. Its cadence, the
+    # moods it borrows and the parser's refusal to guess a mistyped spec are checked here,
+    # because a reminder that silently re-enabled something disabled is a policy bug.
+    from .ui.care import DEFAULT_REMINDERS, parse_reminders
+
+    cadence = "/".join(f"{r.key}:{r.every_s / 60:.0f}" for r in DEFAULT_REMINDERS)
+    moods_ok = all(r.mood in MOODS for r in DEFAULT_REMINDERS)
+    parsed, unknown = parse_reminders("stretch=nonsense,bogus=5")
+    refuses = not parsed and unknown == ["stretch=nonsense", "bogus=5"]
+    print(f"care      : {len(DEFAULT_REMINDERS)} reminders at {cadence} min · moods all real="
+          f"{'yes' if moods_ok else 'NO'} · bad spec refused without guessing={'yes' if refuses else 'NO'}")
+    if not moods_ok or not refuses:
+        failures.append("care clock: a reminder names a mood that does not exist, or a malformed spec was half-guessed")
     if failures:
         print("FAILURES  :", failures)
         return 1

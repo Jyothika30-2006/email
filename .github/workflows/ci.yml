@@ -1,0 +1,104 @@
+name: CI
+
+# What this gate protects: the four claims in the README that are measurements, not
+# intentions — the tool count, the exit-code contract, the fail-closed gate, and the fact
+# that the whole suite runs offline. Everything below is checked from a clean checkout.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  # The fixture file is the whole DNS universe in CI (see config/default.env.example).
+  # One keyless DNSBL that answers sometimes and not always is the only way two runs of
+  # the same sample can differ, so it is switched off before anything else happens.
+  SENTINEL_DNS_STRICT: "1"
+
+jobs:
+  test:
+    name: suite · selftest · demo (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: install (two runtime deps, that is the whole list)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -e ".[dev]"
+
+      - name: selftest — safety invariants, no case file required
+        run: python -m cybersecurity_agent selftest
+
+      - name: pytest — offline, no network egress needed
+        run: python -m pytest tests -q --color=yes
+
+      - name: guided demo — the four samples, the gate, the parity check
+        shell: bash
+        run: |
+          set -o pipefail
+          bash scripts/demo.sh --quick 2>&1 | tee "$RUNNER_TEMP/demo.log"
+
+      # Deliberately NOT uploading runs/ or evidence/: a case directory is somebody's
+      # mail, and this project's own rule is that evidence stays on the analyst's disk.
+      # The transcript is enough to debug a red check.
+      - name: demo transcript (only when something failed)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: demo-log-${{ matrix.python-version }}
+          path: ${{ runner.temp }}/demo.log
+          if-no-files-found: ignore
+
+  quality:
+    name: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: install ruff
+        run: pip install "ruff>=0.6"
+
+      # The part that actually breaks runs: a name that does not exist, a duplicate
+      # definition, a syntax error. This one gates the merge.
+      - name: correctness gate
+        run: ruff check cybersecurity_agent tests --select F821,F811,E9 --output-format=github
+
+      # Formatting/imports/typing-style findings are reported but do not block, because
+      # the repo has not been reformatted to them yet. Turn the continue-on-error off the
+      # day `ruff check --fix` is merged clean.
+      - name: style dashboard (advisory)
+        continue-on-error: true
+        run: ruff check cybersecurity_agent tests --statistics
+
+      - name: diagrams and docs are consistent with the code
+        run: |
+          pip install -r requirements.txt
+          pip install -e ".[dev]"
+          python -m pytest tests/test_docs_are_honest.py -q --color=yes

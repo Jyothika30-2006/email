@@ -1,7 +1,7 @@
 # SENTINEL-IR — build report (what was asked, what exists, what was measured)
 
-Repo: `/home/user/email` · package `cybersecurity_agent/` · 9.2k lines of Python (46 modules) +
-2.22k lines of tests (128 tests) + 3 shell scripts (`setup.sh`, `compile_contract.sh`, `demo.sh`) + 1 Solidity contract + 4 sample `.eml`.
+Repo: `/home/user/email` · package `cybersecurity_agent/` · 9 281 lines of Python (46 modules) +
+2 609 lines of tests (144 tests) + 3 shell scripts (`setup.sh`, `compile_contract.sh`, `demo.sh`) + 1 Solidity contract + 4 sample `.eml`.
 Everything below was verified in this sandbox on 2026-09-07; commands are copy-pasteable.
 
 ---
@@ -81,7 +81,7 @@ Legend: ✅ implemented & verified here · ⚠️ implemented but limited by thi
 Measured: with the whole surface switched off (`--no-pet --no-status-hook`) all four samples keep
 their exact verdict, risk, confidence and executed plan — `test_the_pet_cannot_influence_the_case`
 compares the two runs. `selftest` re-checks the containment invariants (uniform live box, note
-vocabulary, attacker-shaped text dropped) so `python -m cybersecurity_agent selftest` fails loudly
+vocabulary, attacker-shaped text dropped, care cadence and mood names) so `python -m cybersecurity_agent selftest` fails loudly
 if a future change turns the mascot into a channel.
 
 ---
@@ -123,7 +123,7 @@ $ python -m cybersecurity_agent selftest
     ledger tamper detected, and the pet/status display containment holds: 17 moods,
     uniform live box, 26-entry note vocabulary, attacker-shaped notes dropped)
 $ .venv/bin/python -m pytest tests -q
-→ 128 passed in ~7 s, no network egress needed
+→ 144 passed in ~6.3 s, no network egress needed
 
 # the guided demo (offline, four samples) — verdict lines and the exit codes, verbatim
 $ ./scripts/demo.sh
@@ -188,6 +188,25 @@ Transcript: `DEMO.md` (generated, not hand-written).
    second run appended to the first case's `audit.log` and saw its `status.jsonl`. That is a custody
    problem, not a cosmetic one, so the id now carries a `-2`/`-3` counter when the directory exists
    (`test_two_runs_in_the_same_second_do_not_share_a_case_dir`).
+11. **A linter found two bugs the test suite had already blessed.** `ruff --select F821` flagged
+    `dedup_strikes += 1` in `_agent_loop` — a counter that was never initialised, so a planner
+    stalling on already-completed work (three `skipped` results in a row) raised `NameError`
+    *inside the controller* instead of closing the pipeline; `F811` found `describe_tools()` and
+    `ollama_tool_schemas()` defined twice in `dispatch.py`, the second pair silently shadowing the
+    first. Neither was reachable from the four samples, which is the argument for gating CI on
+    `F821,F811,E9` while leaving style advisory, and for the regression test
+    (`test_a_planner_that_only_proposes_done_work_ends_the_loop`).
+12. **A demo that depends on the network is a demo that lies.** One keyless Spamhaus lookup was the
+    only thing that could make two runs of the same sample differ; `SENTINEL_DNS_STRICT=1` now makes
+    the fixture file the whole DNS universe for demo + CI + tests, and a fixture entry may assert
+    `NXDOMAIN`/`NODATA` explicitly (an absent key means "no answer", never "not listed"). The four
+    scores above are therefore measurements of a *hermetic* run.
+13. **The documentation is now a tested artifact.** Colour-coded Mermaid sources in `docs/diagrams/`
+    are the single truth for the three views (README hero + ARCHITECTURE §0 carry verbatim copies),
+    and `tests/test_docs_are_honest.py` fails on a stale count, a documented flag the parser does not
+    accept, an env var nothing reads, a diagram copy that drifted, or a mention of a web UI without
+    the negation that makes it a non-goal. It caught a stale per-file test count on its first run —
+    which is the whole reason to automate the claim instead of re-reading it.
 
 ---
 
@@ -219,8 +238,13 @@ Transcript: `DEMO.md` (generated, not hand-written).
 
 1. `README.md` — pitch, safety model (§6), exact commands, honest limitations (§15);
    `DEMO.md` + `scripts/demo.sh` for a captured, reproducible walkthrough.
-2. `docs/ARCHITECTURE.md` — module boundaries/trust model, the three "brains", extension points.
+2. `docs/ARCHITECTURE.md` §0 — the three colour-coded diagrams (architecture by trust boundary,
+   the workflow of one investigation, score→verdict→confidence), then module boundaries/trust
+   model, the three "brains", extension points. Sources: `docs/diagrams/*.mmd`.
 3. `docs/FORENSIC_METHODOLOGY.md` — the full weight table, fusion math, the origin ladder,
    what each report line means, and what "unobserved" implies.
 4. `cybersecurity_agent/agent.py` → `tools/dispatch.py` → `risk.py` → `blockchain/hashchain.py`.
-5. `tests/` (11 files, 128 tests) — each test name states the claim it defends.
+5. `tests/` (12 test files + `conftest.py`, 144 tests) — each test name states the claim it defends.
+6. `CONTRIBUTING.md` · `SECURITY.md` · `CHANGELOG.md` · `.github/` — how to change this safely,
+   what counts as a vulnerability in a tool whose job is holding hostile input at arm's length,
+   what the version number commits to, and what CI gates (suite + selftest + demo + docs test).

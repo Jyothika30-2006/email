@@ -28,8 +28,17 @@ def _isolate_evidence(tmp_path_factory):
     import cybersecurity_agent.agent as _agent_mod
     iso.setattr(_agent_mod, "RUNS_DIR", d / "runs")
     iso.setenv("SENTINEL_TOR_EXIT_FIXTURE", str(SAMPLES / "fixtures" / "tor_exit_ips.txt"))
+    # …and the whole suite resolves DNS from the sample fixture file, never a real
+    # resolver. Two reasons: the machine running the tests may have no DNS at all, and
+    # a keyless DNSBL that answers sometimes-but-not-always is the classic cause of
+    # "the end-to-end numbers changed and nobody touched the code".
+    iso.setenv("SENTINEL_DNS_FIXTURES", str(SAMPLES / "fixtures" / "dns_fixtures.json"))
+    iso.setenv("SENTINEL_DNS_STRICT", "1")
+    from cybersecurity_agent.net import clear_dns_fixture_cache
+    clear_dns_fixture_cache()
     yield d
     iso.undo()
+    clear_dns_fixture_cache()
 
 FIXTURES = {
     "203.0.113.66": {"city": "Testville", "country": "Testland", "countryCode": "TL", "lat": 10.0, "lon": 20.0,
@@ -102,6 +111,9 @@ def dns_fixtures(tmp_path, monkeypatch):
         "lure.attacker.test": ["203.0.113.66"],
         "exit-node.tor.test": ["198.51.100.24"],
         "66.113.0.203.ip-port.exitlist.torproject.org": ["127.0.0.2"],
+        # 'NXDOMAIN' as a value = the fixture asserts the name does not exist, which is
+        # how DNSEL says "not an exit node". An absent key would mean "we could not ask".
+        "99.113.0.203.ip-port.exitlist.torproject.org": "NXDOMAIN",
         "PTR:203.0.113.66": ["mail.attacker.test"],
     }))
     from cybersecurity_agent.net import clear_dns_fixture_cache

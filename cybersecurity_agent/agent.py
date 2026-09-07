@@ -275,6 +275,7 @@ class Agent:
     def _agent_loop(self) -> None:
         assert self.ctx is not None and self.ui is not None
         empty_strikes = 0
+        dedup_strikes = 0
         for step in range(1, self.cfg.max_agent_steps + 1):
             if self.switch.aborted:
                 self.aborted = True

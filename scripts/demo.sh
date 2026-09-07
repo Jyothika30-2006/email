@@ -24,6 +24,10 @@ QUICK=0
 
 export SENTINEL_DNS_FIXTURES=samples/fixtures/dns_fixtures.json
 export SENTINEL_TOR_EXIT_FIXTURE=samples/fixtures/tor_exit_ips.txt
+# The fixture file is the whole DNS universe for this run (see config/default.env.example).
+# Without it, one keyless DNSBL answer can show up in one run and not the next — and step 6
+# below asserts that two runs of the same sample agree, so that flake would fail the demo.
+export SENTINEL_DNS_STRICT=1
 
 step() { printf '\n\033[1;36m── %s\033[0m\n' "$1"; }
 note() { printf '\033[2m%s\033[0m\n' "$1"; }

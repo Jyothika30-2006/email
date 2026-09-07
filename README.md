@@ -1,9 +1,98 @@
 # 🔬 SENTINEL-IR — AI-Powered Cybersecurity Agent for Email Threat Detection, Geolocation Tracing, Forensic Analysis & Blockchain-Verified Evidence Logging
 
+![python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776ab?logo=python&logoColor=white)
+![runtime deps](https://img.shields.io/badge/runtime%20deps-2-informational)
+![license](https://img.shields.io/badge/license-MIT-green)
+![tests](https://img.shields.io/badge/tests-144-brightgreen)
+![ci](https://github.com/Jyothika30-2006/email/actions/workflows/ci.yml/badge.svg)
+![offline](https://img.shields.io/badge/offline--first-yes-blueviolet)
+![telemetry](https://img.shields.io/badge/telemetry-none-critical)
+![llm](https://img.shields.io/badge/LLM-local%20Ollama%20only-lightgrey)
+
 **A fully local, terminal-based autonomous agent.** No web dashboard. No browser UI.
 No cloud LLM API. The "brain" is a local LLM (Ollama) driving a **whitelisted tool
 loop** against a real suspicious `.eml` file — with a human confirmation gate, an
 instant kill-switch, sandboxed static analysis, and tamper-evident blockchain logging.
+
+## Architecture at a glance — colour-coded by trust boundary
+
+Colour is *meaning* here, not decoration: red is attacker-controlled input, amber is a
+human-in-the-loop control, indigo is the harness (the only place anything gets decided), sky is the
+optional local model, green is evidence and chain of custody, violet is the optional ledger mirror,
+pink is display-only, and every dashed grey box is an optional or degraded path that says so.
+
+```mermaid
+%%{init: {"theme": "dark", "flowchart": {"curve": "linear", "nodeSpacing": 45, "rankSpacing": 55}}}%%
+%% SENTINEL-IR — architecture, colour-coded by trust boundary.
+%% Keep this file and the copies in README.md / docs/ARCHITECTURE.md identical;
+%% `tests/test_docs_are_honest.py` checks the colour legend and the node list exist.
+%%
+%% Colours are semantic, not decorative:
+%%   red      attacker-controlled input (never trusted, never rendered unfiltered)
+%%   amber    the human-in-the-loop controls (sanitise, gate)
+%%   indigo   the harness — the only place anything is decided
+%%   sky      the optional local model
+%%   green    evidence and chain of custody
+%%   violet   optional ledger mirror
+%%   pink     display surfaces (can show status, can never speak for the case)
+%%   grey     optional / degraded paths, drawn dashed on purpose
+%%
+flowchart LR
+  classDef input fill:#450a0a,stroke:#f87171,color:#fecaca,stroke-width:2px
+  classDef control fill:#713f12,stroke:#fbbf24,color:#fef3c7
+  classDef core fill:#1e1b4b,stroke:#818cf8,color:#e0e7ff,stroke-width:2px
+  classDef brain fill:#0c4a6e,stroke:#38bdf8,color:#e0f2fe
+  classDef evidence fill:#052e16,stroke:#34d399,color:#d1fae5
+  classDef ledger fill:#2e1065,stroke:#a78bfa,color:#ede9fe
+  classDef display fill:#500724,stroke:#f472b6,color:#fce7f3
+  classDef optional fill:#111827,stroke:#9ca3af,color:#e5e7eb,stroke-dasharray:5 4
+
+  EML["suspicious .eml<br/>attacker-controlled text"]:::input
+  PARSE["evidence/eml.py<br/>Received hops · SPF/DKIM/DMARC<br/>URLs · attachments · Message-ID"]:::core
+  SANE["net.sanitize_untrusted()<br/>control tokens defanged, addresses redacted<br/>injection attempts recorded as a signal"]:::control
+  AGENT["agent.py — the controller<br/>THINK → CHOOSE → ACT → OBSERVE<br/>max 14 steps · kill-switch 'x' armed"]:::core
+  BRAIN["llm/ollama_client.py<br/>local Ollama tool-calling<br/>streams its reasoning into the UI"]:::brain
+  DET["llm/deterministic.py<br/>offline planner — labelled<br/>LLM OFFLINE, never faked"]:::brain
+  DISP["tools/dispatch.py — the ONLY exec path<br/>whitelist → needs → 15 s hard timeout → gate"]:::core
+  TOOLS["9 whitelisted tools<br/>parse_headers · extract_urls · resolve_origin<br/>geolocate_ip · check_tor_exit · check_reputation<br/>static_file_scan · hash_evidence · redact_reply"]:::core
+  GATE["human gate: CONFIRM_NEEDED<br/>type 'yes' · 120 s silence = DENY<br/>--yes/--demo auto-approve AND record it"]:::control
+  SBX["sandbox/docker_runner.py<br/>--network none · read-only mount · cap-drop ALL<br/>tmpfs · pids/cpus/memory · destroyed after each run<br/>no docker → rlimit subprocess, labelled"]:::optional
+  RISK["risk.py — log-odds fusion<br/>30 = SUSPICIOUS floor · 65 + 1 strong = MALICIOUS"]:::core
+  EVID["evidence/ — hashed BEFORE analysis<br/>report.md · run.json · evidence.json · audit.log"]:::evidence
+  CHAIN["blockchain/ — written after the verdict<br/>hash-chain (always) · Ganache mirror (optional)"]:::ledger
+  UI["ui/console.py — rich Live<br/>risk + coverage bars · step table · origin honesty panel"]:::display
+  PET["ui/pet.py · ui/care.py · status.py<br/>17 work-status moods · care reminders<br/>status.jsonl for external companions"]:::display
+  PIXEL["tools_dev.serve_pixel<br/>opt-in 1×1 listener, loopback"]:::optional
+
+  EML --> PARSE --> SANE --> AGENT
+  AGENT <--> BRAIN
+  AGENT <--> DET
+  AGENT --> DISP --> TOOLS --> RISK --> AGENT
+  TOOLS -. "file-touching tools only" .-> GATE
+  GATE -.-> SBX
+  SBX -.-> TOOLS
+  RISK --> EVID --> CHAIN
+  AGENT --> UI --> PET
+  TOOLS -. "fallback 3d, human sends" .-> PIXEL
+```
+
+| colour | what it means in this codebase |
+|---|---|
+| 🔴 red | input that is hostile by definition — an email. It is parsed, sanitised and quoted; it is never obeyed and never rendered unfiltered |
+| 🟠 amber | the two controls a human owns: the defang/sanitise step and the `CONFIRM_NEEDED` gate (silence = DENY) |
+| 🟣 indigo | the harness: controller, `dispatch()`, risk fusion. **No tool decides anything**; the whitelist decides what can run |
+| 🔵 sky | the local model. Unreachable or `--offline` ⇒ the deterministic planner, labelled in the UI and the report |
+| 🟢 green | evidence: hashed *before* analysis, then `report.md` / `run.json` / `evidence.json` / `audit.log` |
+| 🟪 violet | the ledger, written **after** the verdict is displayed — custody, never detection |
+| 🩷 pink | display surfaces: the `rich` frame, the work-status cat, the JSONL a companion tails. Status in, nothing out |
+| ⚪ dashed grey | optional or degraded paths (no Docker, no Ganache, opt-in pixel listener) — each one prints what it could not do |
+
+Two more diagrams live in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md#0-diagrams): the
+[workflow of one investigation](docs/ARCHITECTURE.md#0-diagrams) and
+[how a score becomes a verdict](docs/ARCHITECTURE.md#0-diagrams) (sources in `docs/diagrams/`, and a
+test keeps the copies in this file identical to them).
+
+Same picture, plain-text copy for anyone reading this in a terminal:
 
 ```
                         ┌──────────────────────────────────────────────┐
@@ -149,7 +238,7 @@ python -m cybersecurity_agent investigate samples/phishing_obvious.eml
 python -m cybersecurity_agent investigate samples/gmail_bec_subtle.eml --demo --yes
 
 # fully air-gapped: zero outbound HTTP (local DNS checks still allowed)
-python -m cybersecurity_agent investigate samples/phishing_obvious.eml --offline
+python -m cybersecurity_agent investigate samples/phishing_obvious.eml --offline --no-llm
 
 # tune the loop itself (there are no hidden knobs: every flag has an env var too)
 python -m cybersecurity_agent investigate samples/tor_exit_legit.eml \
@@ -463,12 +552,13 @@ reminders for the human doing the reading.
 
 ## 13. Tests & demo harness
 ```bash
-.venv/bin/python -m pytest tests -q          # 128 tests in ~7 s, no network egress needed
-python -m cybersecurity_agent selftest       # 6 checks: 9-tool registry, whitelist refuses
+.venv/bin/python -m pytest tests -q          # 144 tests in ~6.3 s, no network egress needed
+python -m cybersecurity_agent selftest       # 7 checks: 9-tool registry, whitelist refuses
                                              # 'shell', timeout raises, fuse math, a deliberately
-                                             # tampered ledger is detected, and the pet/hook
-                                             # display containment holds (uniform live box,
-                                             # enum-only notes, attacker text dropped)
+                                             # tampered ledger is detected, the pet/hook display
+                                             # containment holds (uniform live box, enum-only
+                                             # notes, attacker text dropped), and the care clock's
+                                             # cadence + mood names are real
 ```
 Coverage targets the *claims*: hop numbering & folded headers, `client-ip=` (both phrasings),
 the webmail degradation ladder and ceilings, defanging of injected control tokens, whitelist
@@ -481,12 +571,12 @@ RLP/ABI published vectors, `EvidenceChain.sol` ↔ ABI ↔ logger selector agree
 gauge being a real monotone bar whose threshold markers are semantic (so a non-TTY demo log
 still shows *how far* a case was from flipping verdict),
 end-to-end runs of all four samples through both the deterministic engine and a stubbed LLM
-transport (10 tests in `tests/test_agent_end_to_end.py`), and — because a mascot in a security
+transport (11 tests in `tests/test_agent_end_to_end.py`), and — because a mascot in a security
 tool needs policing — that the pet's frames are constant and content-free, its box never resizes
 the live region, transient reactions decay but `waiting` does not, the JSONL hook drops
 attacker-shaped notes instead of sanitizing them, care reminders reach `audit.log` but never
 `report.md`, and switching the whole surface off leaves the verdict, the scores and the executed
-plan identical (21 tests in `tests/test_pet_and_status.py`).
+plan identical (22 tests in `tests/test_pet_and_status.py`).
 
 Air-gapped demo harness (this repo ships it because demo venues eat Wi-Fi):
 ```bash
@@ -513,7 +603,7 @@ investigations leave it off.
 
 ## 14. Project layout
 ```
-cybersecurity_agent/            (≈9.2k lines, 46 files; stdlib + rich + dnspython only)
+cybersecurity_agent/            (9 281 lines in 46 files; stdlib + rich + dnspython only)
 ├── cli.py                 argparse: investigate | analyze-file | chain | pixel-listen | mock-apis | pet | selftest
 ├── agent.py               Agent controller: THINK→CHOOSE→ACT→OBSERVE loop, custody, gate, verdict, report
 ├── config.py              every tunable (timeouts, endpoints, sandbox policy, caps) + secret redaction
@@ -565,9 +655,17 @@ samples/                   4 .eml (clean · obvious phishing · subtle Gmail BEC
   ├── payloads/            macro stub / renamed-EXE / EICAR (all harmless) + fixtures/
   └── fixtures/            dns_fixtures.json · tor_exit_ips.txt (demo/CI determinism)
 scripts/                   generate_samples.py · setup.sh · compile_contract.sh · demo.sh
-tests/                     128 tests (2 222 lines) — see §13
+tests/                   144 tests (2 609 lines) — see §13; `test_docs_are_honest.py` is the one that fails
+                           when a README number, a documented flag or a diagram copy goes stale
+.github/                 ci.yml (suite · selftest · demo on 3.10/3.11/3.12) · issue + PR templates
+SECURITY.md              what counts as a vulnerability *here*, and what is deliberately not one
+CONTRIBUTING.md          setup, the seven rules, how to add a tool, measure-before-you-write
+CHANGELOG.md             1.0.0 as shipped; the versioned contract is flags + artifacts + exit codes
+CODE_OF_CONDUCT.md · LICENSE (MIT) · .editorconfig
 config/default.env.example every SENTINEL_* knob, commented
 docs/ARCHITECTURE.md       module boundaries, trust model, the three brains, extension points
+docs/diagrams/             architecture.mmd · workflow.mmd · verdict.mmd — the colour-coded sources
+                           rendered above and in ARCHITECTURE §0 (edit these, not the markdown)
 docs/FORENSIC_METHODOLOGY.md  weights, fusion math, confidence semantics, how to read a report
 FINAL_REPORT.md            requirement-by-requirement ledger + measured results + limitations
 DEMO.md                    captured transcript of ./scripts/demo.sh + what tests each claim
@@ -605,3 +703,5 @@ send anything itself. `analyze-file` refuses without `--confirm`. Geolocation ou
 investigative *lead generation*, never evidence of identity, and this project must not be used
 to accuse a real person. All samples are fabricated; the only payload included is the EICAR
 test string.
+
+**Process, if you want to change any of this**: [CONTRIBUTING.md](CONTRIBUTING.md) states the seven rules a change has to respect, [SECURITY.md](SECURITY.md) says what counts as a vulnerability in a tool whose whole job is holding hostile input at arm's length (and what is a non-finding), [CHANGELOG.md](CHANGELOG.md) fixes what the version number means, and [.github/pull_request_template.md](.github/pull_request_template.md) is the checklist that keeps the documented numbers honest.

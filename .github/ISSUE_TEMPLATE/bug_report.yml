@@ -1,0 +1,88 @@
+name: Bug report
+description: Something produced a wrong number, a wrong verdict, a crash, or a claim the docs do not support
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        If the "bug" is that a real email got a verdict you disagree with, that is calibration, not
+        a defect — use the discussion issue type instead and **redact** the mail first. Never attach
+        unredacted headers, attachments or case output here: `runs/<case>/` is somebody's mailbox.
+
+  - type: input
+    id: version
+    attributes:
+      label: Commit or version
+      description: '`git rev-parse --short HEAD` — "latest" is not a version'
+      placeholder: "abc1234"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which boundary broke?
+      options:
+        - parsing / headers / origin tracing
+        - risk scoring or confidence
+        - the human gate / kill-switch / timeouts
+        - sandbox
+        - evidence, hash-chain or report writing
+        - display surface (pet, care, status.jsonl)
+        - CLI / setup / demo / CI
+        - documentation that says something untrue
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: |
+        The exact command, with the flags you used. `--demo --no-llm` and the sample corpus make a
+        report reproducible without anyone's mail; please use those if you can.
+      value: |
+        ```bash
+        python -m cybersecurity_agent investigate samples/phishing_obvious.eml --demo --no-llm
+        ```
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected, and what happened
+      description: Include the exit code. `0` SAFE · `1` SUSPICIOUS · `2` MALICIOUS is the contract.
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Relevant output
+      description: The `runs/<case>/run.json` verdict block, the report's gaps section, or the traceback. Redact anything real.
+      render: text
+    validations:
+      required: false
+
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      description: OS, Python version, Docker present?, Ollama present?, `SENTINEL_*` variables you set.
+      placeholder: "Ubuntu 24.04 · Python 3.12.3 · no Docker · no Ollama · SENTINEL_DNS_FIXTURES unset"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: "`python -m cybersecurity_agent selftest` passes (so we know the invariants are intact)"
+          required: true
+        - label: "`python -m pytest tests -q` passes or shows the failing test name in this report"
+          required: true
+        - label: "No real email address, header block or attachment is present in anything I pasted"
+          required: true

@@ -112,21 +112,26 @@ def http_json(
 # ─────────────────────────────────────────────────────────────────────────────
 # DNS
 # ─────────────────────────────────────────────────────────────────────────────
+DNS_STRICT_ENV = "SENTINEL_DNS_STRICT"
 _fixture_cache: dict[str, Any] = {}
 _fixture_loaded = False
+_fixture_cache_loaded_path: Optional[str] = None
 
 
 def dns_fixture(name: str) -> Optional[list[str]]:
     """Demo/CI only (Config.dns_fixtures / SENTINEL_DNS_FIXTURES): a JSON map
     {name: [ips]} consulted BEFORE real DNS, so an air-gapped demo room or pytest can
     exercise the origin/Tor/reputation code paths. Callers label these answers
-    'fixture' — a canned value is never reported as if it came from live DNS."""
-    global _fixture_cache, _fixture_loaded
+    'fixture' — a canned value is never reported as if it came from live DNS. An entry
+    of `[]` means "resolves, no A record" (NODATA), which is how a fixture says
+    "this IP is not on that blocklist" without pretending to have queried it."""
+    global _fixture_cache, _fixture_loaded, _fixture_cache_loaded_path
     if not _fixture_loaded:
         _fixture_loaded = True
         path = os.environ.get("SENTINEL_DNS_FIXTURES", "")
         _fixture_cache = {}
         if path and os.path.exists(path):
+            _fixture_cache_loaded_path = path
             try:
                 with open(path, encoding="utf-8") as fh:
                     blob = json.load(fh)
@@ -135,20 +140,54 @@ def dns_fixture(name: str) -> Optional[list[str]]:
             except (json.JSONDecodeError, OSError):
                 _fixture_cache = {}
     hit = _fixture_cache.get((name or "").lower())
+    if isinstance(hit, str):
+        # A string value asserts *no answer of any kind*: how a fixture says "this IP is
+        # clean on that blocklist" instead of "we never got to ask". See fixture_entry().
+        return [] if hit.upper() in {"NXDOMAIN", "NODATA"} else [hit]
     return [str(i) for i in hit] if isinstance(hit, list) else None
 
 
+def fixture_entry(name: str):
+    """Raw fixture entry for `name`: a list of answers, or the string "NXDOMAIN"/
+    "NODATA" when the fixture asserts the name does not resolve. None = silent."""
+    dns_fixture(name)                  # forces the one-time load
+    hit = _fixture_cache.get((name or "").lower())
+    if isinstance(hit, (str, list)):
+        return hit
+    return None
+
+
+def fixtures_configured() -> bool:
+    """True when a DNS fixture file was loaded (SENTINEL_DNS_FIXTURES)."""
+    dns_fixture("__probe__")          # forces the one-time load
+    return _fixture_cache_loaded_path is not None
+
+
 def clear_dns_fixture_cache() -> None:
-    global _fixture_cache, _fixture_loaded
-    _fixture_cache, _fixture_loaded = {}, False
+    global _fixture_cache, _fixture_loaded, _fixture_cache_loaded_path
+    _fixture_cache, _fixture_loaded, _fixture_cache_loaded_path = {}, False, None
 
 
 def dns_a(name: str, timeout: float = 2.5) -> tuple[list[str], str]:
     """Resolve A records → (ips, error). 'NXDOMAIN'/'NODATA' matter: the Tor DNSEL
     protocol distinguishes *listed* (127.0.0.2) from *not listed* (NXDOMAIN)."""
-    fixture = dns_fixture(name)
-    if fixture is not None:
-        return fixture, "fixture"
+    entry = fixture_entry(name)
+    if entry is not None:
+        if isinstance(entry, str):
+            code = entry.upper()
+            if code in {"NXDOMAIN", "NODATA"}:
+                return [], code
+            return [entry], "fixture"
+        # An entry of [] is a deliberate answer, not a miss: the name exists and has
+        # no A record. For a DNSBL that is the difference between "we could not ask"
+        # and "we asked and it is clean", so it must not fall through to live DNS.
+        return [str(i) for i in entry], ("fixture" if entry else "NODATA")
+    if DNS_STRICT_ENV in os.environ and fixtures_configured():
+        # Demo/CI hermeticity: the fixture file IS the DNS universe, so a name that
+        # is not in it resolves to nothing instead of reaching out to a resolver.
+        # Without this, a live blocklist answer can appear in one run and not the
+        # next, which makes otherwise-identical runs differ by a hair.
+        return [], "FIXTURE_ONLY"
     try:
         import dns.exception
         import dns.resolver
