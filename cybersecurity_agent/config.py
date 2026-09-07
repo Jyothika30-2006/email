@@ -58,6 +58,37 @@ class Config:
     kill_switch_key: str = os.environ.get("SENTINEL_KILL_KEY", "x")
     """SAFETY #8: single keypress aborts agent + destroys sandbox."""
 
+    # ── work-status reactions (terminal pet) + companion hook ────────────────
+    pet_enabled: bool = _env_bool("SENTINEL_PET", True)
+    """ASCII sentinel cat in the live UI whose mood tracks real agent events (thinking while
+    the planner runs, fur up on an injection attempt, hop/hiss at the verdict). It is a status
+    surface only: frames come from `ui/pet.MOODS`, never from the email. `--no-pet` or
+    SENTINEL_PET=0 removes the panel without touching anything else."""
+
+    pet_fps: float = _env_float("SENTINEL_PET_FPS", 2.0)
+    """Animation rate for the pet (frames/second of wall-clock time, event-driven on top)."""
+
+    pet_skin: str = os.environ.get("SENTINEL_PET_SKIN", "default")
+    """Colour palette for the pet (`default`, `high-contrast`, `colour-blind`, `calm`, `mono`).
+    Cosmetics only — the art and every number on screen are identical across skins, so a skin
+    can never change what a case looks like. Unknown names fall back to `default`."""
+
+    pet_reminders: str = os.environ.get("SENTINEL_REMINDERS", "eyes=20,stretch=30,water=45")
+    """Care reminders (`ui/care.py`) — minutes between nudges: `eyes=20,stretch=30,water=45`,
+    or `off` to disable. They are about the analyst, not the case: they cannot change a score,
+    a verdict, or the tool plan, and they never quote the email."""
+
+    pet_pomodoro: str = os.environ.get("SENTINEL_POMODORO", "")
+    """Optional Pomodoro for long manual reviews: `25,5` (focus min, break min). Empty = off."""
+
+    status_hook_enabled: bool = _env_bool("SENTINEL_STATUS_HOOK_ENABLED", True)
+    """Set to 0 to stop writing `runs/<case>/status.jsonl` as well as the shared hook."""
+
+    status_hook_path: str = os.environ.get("SENTINEL_STATUS_HOOK", "")
+    """Optional extra JSONL sink for work-status events, so an external companion or tmux bar
+    can react (see `status.py`). `runs/<case>/status.jsonl` is always written. Lines carry
+    enums and numbers only — never email content, addresses, IPs or tool summaries."""
+
     offline: bool = _env_bool("SENTINEL_OFFLINE", False)
     """Air-gap mode: zero outbound HTTP. DNS-based Tor checks still run (cheap,
     and the Tor Project DNSEL is a DNSBL, not an HTTP API)."""

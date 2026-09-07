@@ -48,10 +48,11 @@ instant kill-switch, sandboxed static analysis, and tamper-evident blockchain lo
 9. [Ollama / LLM integration](#9-ollama--llm-integration)
 10. [Free-tier API keys (optional)](#10-free-tier-api-keys-optional)
 11. [Advanced: tracking-pixel origin capture](#11-advanced-tracking-pixel-origin-capture)
-12. [Tests & demo harness](#12-tests--demo-harness)
-13. [Project layout](#13-project-layout)
-14. [Honest limitations](#14-honest-limitations)
-15. [Ethics & legal](#15-ethics--legal)
+12. [Work-status reactions & care reminders](#12-work-status-reactions--care-reminders-optional)
+13. [Tests & demo harness](#13-tests--demo-harness)
+14. [Project layout](#14-project-layout)
+15. [Honest limitations](#15-honest-limitations)
+16. [Ethics & legal](#16-ethics--legal)
 
 ---
 
@@ -154,7 +155,8 @@ python -m cybersecurity_agent investigate samples/phishing_obvious.eml --offline
 python -m cybersecurity_agent investigate samples/tor_exit_legit.eml \
         --model qwen2.5:7b-instruct --steps 10 --timeout 10 --kill-key x
 ```
-You see, live in the terminal: the agent's reasoning lines, two progress bars (a colour-coded
+You see, live in the terminal: the agent's reasoning lines, a small ASCII sentinel cat whose mood
+tracks what the loop is doing (§12; `--no-pet` removes it), two progress bars (a colour-coded
 risk gauge whose threshold ticks are drawn *into* the bar — `·` = verdict floor still ahead,
 `┼` = passed — and an evidence-coverage bar), per-tool `▲ +n pts` rows, the `[CONFIRM_NEEDED]`
 gate, the final verdict block, and then:
@@ -167,6 +169,7 @@ runs/<case>/report.md       full forensic report (transcript + verdict + evidenc
 runs/<case>/run.json        machine-readable: case/events/results/verdict/chain/signals
 runs/<case>/evidence.json   chain-of-custody manifest (hash-before-analysis)
 runs/<case>/audit.log       append-only timestamped audit entries
+runs/<case>/status.jsonl    work-status events for the pet/companion display (enums only, §12)
 evidence/hashchain.jsonl    tamper-evident evidence chain (append-only ledger)
 ```
 Verify the ledger any time:
@@ -259,7 +262,7 @@ $ # after someone edits a stored verdict (verification stops at the first broken
    first broken index: 1
 ```
   `chain anchor` prints the head hash to publish elsewhere — that is what turns
-  *tamper-evident* into externally verifiable (see §14).
+  *tamper-evident* into externally verifiable (see §15).
 * **B. Ganache / local Ethereum testnet (optional).**
   `blockchain/ganache_logger.py` + `blockchain/contract/EvidenceChain.sol`. It speaks
   JSON-RPC over `urllib`, signs a legacy transaction with pure-Python secp256k1/RLP
@@ -363,12 +366,100 @@ python -m cybersecurity_agent investigate samples/gmail_bec_subtle.eml --demo   
   attribution of a human. Bind to `127.0.0.1` unless your incident owner authorised otherwise
   (the listener warns loudly if you bind a routable interface).
 
-## 12. Tests & demo harness
+## 12. Work-status reactions & care reminders (optional)
+
+A terminal agent is hard to read at a glance: "the model is thinking", "it is stuck" and "it just
+found something" all look like the same static text. SENTINEL-IR borrows the trick that makes
+desktop pet companions popular — the mascot reflects **what the agent is doing right now** — and puts
+it where this project is allowed to live: the terminal.
+
+* **17 moods, driven by real events** (`cybersecurity_agent/ui/pet.py`). The cat sits in the existing
+  `rich` Live frame, perched left of the running score:
+
+  | the cat | means |
+  | --- | --- |
+  | `thinking` | planning the next tool call |
+  | `typing` | a whitelisted tool is running |
+  | `hunting` | tracing link and origin infrastructure |
+  | `fur` | prompt-injection attempt in this message |
+  | `bristle` | evidence integrity problem — treat this case as contaminated |
+  | `steam` | a tool hit its hard timeout |
+  | `denied` | the human denied the file-touching tool |
+  | `hop` / `tilt` / `arch` | verdict: SAFE / SUSPICIOUS / MALICIOUS (pinned, so it survives while you read) |
+  | `flee` | kill-switch pressed, tearing down |
+  | `waiting` | blocked on you — the `[CONFIRM_NEEDED]` gate is open (this one never decays, because
+    it stays true until you answer) |
+  | `sentry` / `stretch` / `water` / `nap` | the care features below |
+
+* **Care reminders + optional Pomodoro** (`cybersecurity_agent/ui/care.py`): `eyes=20,stretch=30,water=45`
+  in minutes, or `off`. Pure wall-clock arithmetic on an injectable clock — no thread, no
+  subprocess, and no code path from this module into `RiskState`. The intervals are longer than a
+  demo run, so a 20-second investigation never gets nudged; a 3-hour manual review does. A fired
+  reminder goes to `runs/<case>/audit.log` as an operator note — deliberately **not** into
+  `report.md`, which stays a document about the email.
+
+* **A status hook, so an *external* companion can react too** (`cybersecurity_agent/status.py`):
+  one JSON line per state change into `runs/<case>/status.jsonl` (plus `$SENTINEL_STATUS_HOOK`),
+  and `sentinel-ir pet` is the reader that ships with it.
+
+### The one rule: the pet is a display, never a channel
+
+The email is attacker-controlled text, so the mascot must not be able to repeat it. That is enforced
+in code rather than by good intentions:
+
+* frames are hand-written constants and nothing is interpolated into them —
+  `test_frames_never_contain_case_text` renders every frame of every mood and asserts none of them
+  contains any case string;
+* the hook's field set is fixed (`ts, case, state, mood, tool, risk, verdict, confidence, note`) and
+  `note` must be a member of `status.NOTE_VOCAB`; anything else is *dropped* and recorded as
+  `"note_dropped": true` rather than sanitized (a test fails if a real run ever produces one);
+* `case` in the shared sink is a 10-hex digest of the case id, so a world-writable file never
+  publishes the operator's evidence filenames;
+* a broken sink is swallowed after one warning — no cartoon is worth failing a case;
+* readers drop any `mood` outside the vocabulary, so a line written by someone else cannot invent a
+  reaction ("state: SAFE, note: nothing to see" is the obvious attack, and it renders as `watching`).
+
+All of it is opt-out, and none of it can change an outcome:
+
 ```bash
-.venv/bin/python -m pytest tests -q          # 106 tests in ~6 s, no network egress needed
-python -m cybersecurity_agent selftest       # 5 checks: 9-tool registry, whitelist refuses
-                                             # 'shell', timeout raises, fuse math, and a
-                                             # deliberately tampered ledger is detected
+sentinel-ir investigate samples/phishing_obvious.eml --no-pet         # no cat, no reminders
+sentinel-ir investigate … --pet-skin colour-blind                     # palette only (never the art)
+sentinel-ir investigate … --remind off --pomodoro 25,5                # silence care, or run a timer
+sentinel-ir investigate … --no-status-hook                            # write no status file at all
+
+sentinel-ir pet --follow --path runs/<case>/status.jsonl              # second terminal, live
+sentinel-ir pet --once --plain                                          # snapshot for scripts/CI
+sentinel-ir pet --pomodoro 25,5                                         # standalone focus timer
+```
+
+`runs/<case>/run.json` stays the record; `status.jsonl` is labelled *advisory display* everywhere it
+can appear, including in the panel the companion prints.
+
+### What was deliberately *not* copied
+
+The reference product is a GUI desktop pet, and three of its features have no honest terminal
+equivalent — saying otherwise would be a fake demo, so they are absent by decision:
+
+* **chasing the mouse cursor** — a TUI only sees mouse events if it grabs the pointer
+  (alt-screen + mouse tracking), which would take over the terminal for no forensic benefit;
+* **sound** (the meow on completion) — no audio dependency; the meow is drawn as
+  `* meow *` in the `hop` frame instead;
+* **a floating window / tray icon** — the brief is terminal-only, so the *companion* is a second
+  `sentinel-ir pet` terminal reading the same JSONL, not a GUI.
+
+What *was* copied is the part that matters for an agent: legible work-status reactions, and care
+reminders for the human doing the reading.
+
+---
+
+## 13. Tests & demo harness
+```bash
+.venv/bin/python -m pytest tests -q          # 127 tests in ~7 s, no network egress needed
+python -m cybersecurity_agent selftest       # 6 checks: 9-tool registry, whitelist refuses
+                                             # 'shell', timeout raises, fuse math, a deliberately
+                                             # tampered ledger is detected, and the pet/hook
+                                             # display containment holds (uniform live box,
+                                             # enum-only notes, attacker text dropped)
 ```
 Coverage targets the *claims*: hop numbering & folded headers, `client-ip=` (both phrasings),
 the webmail degradation ladder and ceilings, defanging of injected control tokens, whitelist
@@ -379,9 +470,14 @@ listed/NXDOMAIN/broken-DNS handling, hash-chain tamper detection, chain-of-custo
 confidence cap, the EICAR/macro/high-entropy static scan, sandbox argv policy, keccak/secp256k1/
 RLP/ABI published vectors, `EvidenceChain.sol` ↔ ABI ↔ logger selector agreement, the live
 gauge being a real monotone bar whose threshold markers are semantic (so a non-TTY demo log
-still shows *how far* a case was from flipping verdict), and
+still shows *how far* a case was from flipping verdict),
 end-to-end runs of all four samples through both the deterministic engine and a stubbed LLM
-transport (10 tests in `tests/test_agent_end_to_end.py`).
+transport (10 tests in `tests/test_agent_end_to_end.py`), and — because a mascot in a security
+tool needs policing — that the pet's frames are constant and content-free, its box never resizes
+the live region, transient reactions decay but `waiting` does not, the JSONL hook drops
+attacker-shaped notes instead of sanitizing them, care reminders reach `audit.log` but never
+`report.md`, and switching the whole surface off leaves the verdict, the scores and the executed
+plan identical (21 tests in `tests/test_pet_and_status.py`).
 
 Air-gapped demo harness (this repo ships it because demo venues eat Wi-Fi):
 ```bash
@@ -406,10 +502,10 @@ mistaken for a live lookup. `--geoip-allow-private` is required for exactly this
 address and prints `enable --geoip-allow-private only for the bundled demo corpus`. Real
 investigations leave it off.
 
-## 13. Project layout
+## 14. Project layout
 ```
-cybersecurity_agent/            (≈7.7k lines; stdlib + rich + dnspython only)
-├── cli.py                 argparse: investigate | analyze-file | chain | pixel-listen | mock-apis | selftest
+cybersecurity_agent/            (≈9.2k lines, 46 files; stdlib + rich + dnspython only)
+├── cli.py                 argparse: investigate | analyze-file | chain | pixel-listen | mock-apis | pet | selftest
 ├── agent.py               Agent controller: THINK→CHOOSE→ACT→OBSERVE loop, custody, gate, verdict, report
 ├── config.py              every tunable (timeouts, endpoints, sandbox policy, caps) + secret redaction
 ├── models.py              Hop · OriginFinding · GeoPoint/GeoConsensus · UrlEvidence ·
@@ -419,6 +515,9 @@ cybersecurity_agent/            (≈7.7k lines; stdlib + rich + dnspython only)
 ├── safety.py              SAFETY #1/#4/#5/#8: FORBIDDEN_ACTIONS, KillSwitch, run_with_timeout, run_argv
 ├── net.py                 bounded HTTP (urllib), DNS + fixture hook, IP classification,
 │                          provider-network tables, sanitize_untrusted()/injection_attempts()
+├── status.py              append-only work-status hook (JSONL): field allowlist + note vocabulary,
+│                          never raises, case id only as a digest → `pet` and other companions read it
+├── petwatch.py            the companion side: tail the hook, render the cat, run care timers
 ├── tools_dev.py           mock GeoIP/reputation server (self-documenting index) + pixel listener
 ├── prompts/agent_system_prompt.py     the exact system prompt (verbatim) + <EMAIL_DATA> wrapper
 ├── evidence/
@@ -446,22 +545,25 @@ cybersecurity_agent/            (≈7.7k lines; stdlib + rich + dnspython only)
 ├── llm/
 │   ├── ollama_client.py   /api/chat tool-calling; native + JSON protocol parsers; retries
 │   └── deterministic.py   offline planner (the no-LLM floor)
-└── ui/console.py          rich Live layout, risk + coverage progress bars,
-                           [CONFIRM_NEEDED] panel, kill-switch key (bars also render in the
-                           non-TTY demo log and as a `gauge` column in report.md)
+└── ui/
+    ├── console.py         rich Live layout, risk + coverage progress bars,
+    │                      [CONFIRM_NEEDED] panel, kill-switch key (bars also render in the
+    │                      non-TTY demo log and as a `gauge` column in report.md)
+    ├── pet.py             17 moods of ASCII work-status reactions; constant frames, fixed box
+    └── care.py            stretch/water/eyes reminders + Pomodoro — pure clock maths
 
 samples/                   4 .eml (clean · obvious phishing · subtle Gmail BEC · Tor exit)
   ├── payloads/            macro stub / renamed-EXE / EICAR (all harmless) + fixtures/
   └── fixtures/            dns_fixtures.json · tor_exit_ips.txt (demo/CI determinism)
 scripts/                   generate_samples.py · setup.sh · compile_contract.sh
-tests/                     106 tests (1 823 lines) — see §12
+tests/                     127 tests (2 198 lines) — see §13
 config/default.env.example every SENTINEL_* knob, commented
 docs/ARCHITECTURE.md       module boundaries, trust model, the three brains, extension points
 docs/FORENSIC_METHODOLOGY.md  weights, fusion math, confidence semantics, how to read a report
 FINAL_REPORT.md            requirement-by-requirement ledger + measured results + limitations
 ```
 
-## 14. Honest limitations
+## 15. Honest limitations
 * **Genuine Gmail/Outlook webmail origin IPs are unrecoverable from headers alone.** No tool
   can fix that; anyone claiming a precise pin from a relay-only `Received:` chain is guessing.
   We output the fallback we used, a lowered ceiling, and the reason.
@@ -484,7 +586,7 @@ FINAL_REPORT.md            requirement-by-requirement ledger + measured results 
 * Ollama, Docker, oletools/YARA/exiftool were unavailable in the build environment, so those
   branches are covered by labelled fallbacks and tests rather than live runs here.
 
-## 15. Ethics & legal
+## 16. Ethics & legal
 Built for **defensive** use on mail you are authorised to investigate (your own mailbox, your
 organisation's quarantine, hackathon datasets). Investigating other people's infrastructure
 — scanning, pixeling, tracing — without authorisation is illegal in most jurisdictions. The

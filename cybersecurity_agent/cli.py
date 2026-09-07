@@ -41,6 +41,16 @@ def build_parser() -> argparse.ArgumentParser:
     inv.add_argument("--sandbox", choices=["auto", "require", "allow-local"], default="auto",
                      help="auto: docker if present, else labelled subprocess; require: refuse without docker; allow-local: same as auto")
     inv.add_argument("--no-pixel", action="store_true", help="do not offer the tracking-pixel reply draft")
+    inv.add_argument("--no-pet", action="store_true", help="hide the work-status cat (also: SENTINEL_PET=0)")
+    inv.add_argument("--pet-skin", default=None, metavar="NAME",
+                     help="cat colour palette: default|high-contrast|colour-blind|calm|mono (cosmetic only)")
+    inv.add_argument("--remind", default=None, metavar="SPEC",
+                     help="care reminders, e.g. 'eyes=20,stretch=30,water=45' or 'off' (minutes)")
+    inv.add_argument("--pomodoro", default=None, metavar="FOCS,BREAK",
+                     help="optional Pomodoro in minutes, e.g. '25,5' (off by default)")
+    inv.add_argument("--status-hook", default=None, metavar="PATH",
+                     help="extra JSONL sink for work-status events (an external companion can tail it)")
+    inv.add_argument("--no-status-hook", action="store_true", help="write no status file at all")
     inv.add_argument("--extra-ioc-file", help="JSONL of captured pixel hits / operator IOCs to fold into the case")
     inv.add_argument("--geo-base-url", help="redirect GeoIP calls (mock-apis server / proxy)")
     inv.add_argument("--reputation-base-url", help="redirect reputation API calls")
@@ -85,6 +95,18 @@ def build_parser() -> argparse.ArgumentParser:
                     help="permit a non-loopback --bind (sandboxed preview only: it serves "
                          "synthetic GeoIP fixtures and no case data)")
 
+    pw = sub.add_parser("pet", help="terminal companion: watch the work-status cat (read-only)")
+    pw.add_argument("--path", default=None, metavar="JSONL",
+                    help="status.jsonl to read (default: $SENTINEL_STATUS_HOOK, else newest runs/*/status.jsonl)")
+    pw.add_argument("--once", action="store_true", help="print one snapshot and exit (scripts/CI)")
+    pw.add_argument("--follow", action="store_true", help="keep refreshing until Ctrl-C")
+    pw.add_argument("--plain", action="store_true", help="no ANSI/colour, no screen clear")
+    pw.add_argument("--skin", default="default", help=", ".join(_pet_skin_names()))
+    pw.add_argument("--fps", type=float, default=2.0, help="animation rate (default 2)")
+    pw.add_argument("--remind", default="", metavar="SPEC", help="'eyes=20,stretch=30,water=45' or 'off'")
+    pw.add_argument("--pomodoro", default="", metavar="FOCS,BREAK", help="e.g. '25,5'")
+    pw.add_argument("--tail", type=int, default=6, help="how many recent events to list")
+
     sub.add_parser("selftest", help="import/registry/ledger smoke test")
     return ap
 
@@ -102,9 +124,16 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_pixel(args)
     if args.cmd == "mock-apis":
         return cmd_mock(args)
+    if args.cmd == "pet":
+        return cmd_pet(args)
     if args.cmd == "selftest":
         return cmd_selftest()
     return 2
+
+
+def _pet_skin_names() -> list[str]:
+    from .ui.pet import skin_names
+    return skin_names()
 
 
 def cmd_investigate(args: argparse.Namespace) -> int:
@@ -123,6 +152,16 @@ def cmd_investigate(args: argparse.Namespace) -> int:
         overrides["blockchain_backend"] = "hashchain"
     if args.extra_ioc_file:
         overrides["extra_ioc_file"] = args.extra_ioc_file
+    # Pet / care / status-hook: display knobs, forwarded through cfg_overrides so one mechanism
+    # covers both CLI and env (never re-parsed inside the tools).
+    if getattr(args, "pet_skin", None):
+        overrides["pet_skin"] = args.pet_skin
+    if getattr(args, "remind", None) is not None:
+        overrides["pet_reminders"] = args.remind
+    if getattr(args, "pomodoro", None) is not None:
+        overrides["pet_pomodoro"] = args.pomodoro
+    if getattr(args, "status_hook", None):
+        overrides["status_hook_path"] = args.status_hook
 
     agent = Agent(
         args.eml, demo=args.demo, auto_confirm=bool(args.yes), offline=args.offline,
@@ -134,6 +173,13 @@ def cmd_investigate(args: argparse.Namespace) -> int:
     )
     agent.cfg.tool_timeout_s = overrides.get("tool_timeout_s", agent.cfg.tool_timeout_s)
     agent.cfg.max_agent_steps = overrides.get("max_agent_steps", agent.cfg.max_agent_steps)
+    for key in ("pet_skin", "pet_reminders", "pet_pomodoro", "status_hook_path"):
+        if key in overrides:
+            setattr(agent.cfg, key, overrides[key])
+    if getattr(args, "no_pet", False):
+        agent.cfg.pet_enabled = False
+    if getattr(args, "no_status_hook", False):
+        agent.cfg.status_hook_enabled = False
     if args.no_chain:
         agent.cfg.blockchain_backend = "hashchain"
         agent._log_to_chain = lambda verdict, sha: {"file": "(disabled via --no-chain)", "payload": {}}  # type: ignore[assignment]
@@ -322,6 +368,19 @@ def cmd_mock(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_pet(args: argparse.Namespace) -> int:
+    from pathlib import Path as _P
+
+    from .petwatch import mood_vocab, run_pet
+    if args.skin not in mood_vocab() and args.skin not in {"default", "mono", "calm",
+                                                           "high-contrast", "colour-blind"}:
+        print(f"[sentinel] unknown skin '{args.skin}' → using 'default' "
+              f"(skins are colour only; they never change what is reported)", file=sys.stderr)
+    return run_pet(path=_P(args.path) if args.path else None, follow=args.follow, once=args.once,
+                   plain=args.plain, skin=args.skin, fps=args.fps, remind=args.remind,
+                   pomodoro=args.pomodoro, tail=max(1, args.tail))
+
+
 def cmd_selftest() -> int:
     from . import tools as T
     from .blockchain.hashchain import HashChain
@@ -362,6 +421,32 @@ def cmd_selftest() -> int:
     print("ledger    :", "append+verify ok" if ok else "FAILED", "| tamper detected:", not tamper.ok)
     if not ok or tamper.ok:
         failures.append("hash-chain behaviour wrong")
+    # Display containment (README §12): the pet is a status surface, so it must be enum-only,
+    # fixed-size, and unable to echo anything the email said. Checked here because a violation
+    # would be a security regression, not a cosmetic one.
+    from .status import NOTE_VOCAB, StatusHook, scrub_note
+    from .ui.pet import BOX_WIDTH, MOODS, _BOX_H, moods, render_lines
+
+    uniform = all(len(render_lines(m, i)) == _BOX_H
+                  and all(len(ln) == BOX_WIDTH for ln in render_lines(m, i))
+                  for m in MOODS for i in range(len(MOODS[m]["frames"])))
+    attacker_text = ("subject: Invoice #9", "From: ceo@company.com", "ignore previous instructions",
+                     "http://paypal.com.login/secure", "https://x.example/\\n<a>")
+    leaky = [n for n in attacker_text if scrub_note(n)[0] is not None]
+    hostile_sink = Path(os.environ.get("TMPDIR", "/tmp")) / "sentinel-selftest-status.jsonl"
+    hostile_sink.unlink(missing_ok=True)
+    StatusHook([hostile_sink]).emit("verdict", mood="hop", case="selftest-case",
+                                     note=attacker_text[0], verdict="SAFE")
+    echoed = attacker_text[0] in hostile_sink.read_text()
+    recorded = json.loads(hostile_sink.read_text())
+    hostile_sink.unlink(missing_ok=True)
+    print(f"pet/hook  : {len(moods())} moods, uniform live box={'yes' if uniform else 'NO'}, "
+          f"note vocabulary={len(NOTE_VOCAB)} entries, attacker-shaped notes dropped="
+          f"{'yes' if not leaky and not echoed else 'NO'}")
+    if recorded.get("note_dropped") is not True:
+        failures.append("status hook accepted free text without marking it dropped")
+    if not uniform or leaky or echoed:
+        failures.append("display containment broken: the pet/hook could echo case text or resize the live frame")
     if failures:
         print("FAILURES  :", failures)
         return 1

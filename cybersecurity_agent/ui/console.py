@@ -33,6 +33,7 @@ except ImportError:  # pragma: no cover
     RICH_OK = False
 
 from ..risk import severity_bar, severity_color
+from .pet import BOX_WIDTH, SentinelCat, one_line, status_caption, style_for
 
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -64,7 +65,9 @@ class StepRow:
 
 
 class ConsoleUI:
-    def __init__(self, *, quiet: bool = False, case_name: str = "", kill_status: str = "") -> None:
+    def __init__(self, *, quiet: bool = False, case_name: str = "", kill_status: str = "",
+                 pet_enabled: bool = True, pet_fps: float = 2.0, pet_skin: str = "default",
+                 care: Any = None) -> None:
         self.quiet = quiet or not RICH_OK or not sys.stdout.isatty()
         self.case_name = case_name
         self.kill_status = kill_status
@@ -80,6 +83,11 @@ class ConsoleUI:
         self.t0 = time.monotonic()
         self._live: Optional["Live"] = None
         self.console = Console(highlight=False, soft_wrap=False, width=110)
+        # Work-status reactions (see `ui/pet.py`): a status surface, never a data surface.
+        self.pet = SentinelCat(enabled=pet_enabled, fps=pet_fps, skin=pet_skin)
+        self.care = care                      # optional `ui.care.CareClock`; display only
+        self._pet_echoed = ""          # mood already announced in the quiet/CI log
+        self.current_tool = ""         # what the pet panel captions as "doing"
 
     # ── live frame lifecycle ───────────────────────────────────────────────
     def start(self, header: str = "") -> None:
@@ -125,7 +133,28 @@ class ConsoleUI:
             risk_text.append(f"evidence {done}/{exp} tool results · "
                              f"floors: ≥30 SUSPICIOUS, ≥65 MALICIOUS (+1 strong indicator)",
                              style="dim")
-        parts.append(Panel(risk_text, border_style=gauge_color, expand=False, title="running score"))
+        if self.pet.enabled and RICH_OK:
+            # Work-status reactions, perched left of the gauge in the SAME panel: a second
+            # narrow panel just wastes width. Two properties matter here:
+            #   · the cat box is a fixed size (`pet._pad`), so the live region can never resize
+            #     mid-run — a resizing Live frame flickers on real terminals;
+            #   · the caption carries enum labels and numbers only. Tool summaries, subjects and
+            #     addresses are never echoed here: this panel is a display an attacker's text
+            #     must not be able to speak through.
+            style = style_for(self.pet.mood, self.pet.skin)
+            risk_text.append("\n" + status_caption(self.pet.mood, tool=self.current_tool,
+                                                    risk=self.risk), style="dim")
+            care_line = self.pet.care_line() or (self.care.caption() if self.care is not None else "")
+            if care_line:
+                # A reminder about the human, not the case — visually separate, and dim.
+                risk_text.append("\n" + care_line, style="grey58")
+            grid = Table.grid(padding=(0, 2))
+            grid.add_column(width=BOX_WIDTH)
+            grid.add_column(ratio=1)
+            grid.add_row(Text("\n".join(self.pet.lines()), style=style), risk_text)
+            parts.append(Panel(grid, border_style=style, expand=True, title="work-status · running score"))
+        else:
+            parts.append(Panel(risk_text, border_style=gauge_color, expand=False, title="running score"))
 
         if self.badges:
             parts.append(Panel(Text.from_markup("  ".join(f"[magenta]{k}[/magenta] [dim]{v}[/dim]" for k, v in self.badges.items())),
@@ -160,6 +189,43 @@ class ConsoleUI:
     def set_kill_status(self, status: str) -> None:
         self.kill_status = status
         self._tick()
+
+    # ── work-status reactions (the pet) ─────────────────────────────────────
+    def set_mood(self, mood: str, *, tool: str = "", pin: bool = False) -> None:
+        """Called by the controller on real events (tool start, gate, injection, verdict).
+        In the live UI this repaints the pet panel; in the non-TTY log it prints one short
+        line per *change*, so a demo recording still shows what the cat was reacting to."""
+        if tool:
+            self.current_tool = tool
+        changed = self.pet.set_mood(mood, pin=pin)
+        if not changed:
+            return
+        if self.quiet:
+            if self.pet.enabled:
+                # Text(), not markup: the label contains `[sentinel-cat]`, which rich would
+                # otherwise try to read as a style tag.
+                self.console.print(Text("  " + one_line(self.pet.mood), style="dim"))
+        else:
+            self._tick()
+
+    def show_care(self, text: str, *, mood: str = "", hold_s: float = 45.0) -> None:
+        """Surface a care reminder (fixed vocabulary from `ui/care.py`): a line under the cat,
+        and in the non-TTY log one printed line. Nothing here touches scores or evidence."""
+        if mood:
+            self.pet.set_mood(mood)
+        self.pet.show_care(text, hold_s=hold_s)
+        if self.quiet:
+            self.console.print(Text(f"  [care] {text}", style="grey58"))
+        else:
+            self._tick()
+
+    def advance_mood(self) -> None:
+        """Force the next animation frame (event-driven liveliness between refreshes)."""
+        if not self.pet.enabled:
+            return
+        self.pet.advance()
+        if not self.quiet:
+            self._tick()
 
     def set_origin(self, lines: list[str]) -> None:
         with self._lock:
@@ -277,10 +343,15 @@ def ask_confirmation(ctx: Any, tool_name: str, reason: str) -> bool:
     if ui:
         ui.stop()
         ui.print_line("")
+        ui.set_mood("waiting")          # the run is now blocked on a human, and says so
+        if not ui.quiet:                # Live is stopped while we read stdin, so draw it here
+            from .pet import render_plain
+            ui.print_line(Text(render_plain("waiting"), style="yellow"))
     answer = _read_line_with_timeout(message, cfg.confirmation_timeout_s)
     approved = answer.strip().lower() in {"yes", "y", "approve", "approved"}
     append_audit(case_dir, "gate_decision", f"{tool_name} answer={answer.strip()[:16] or '<timeout>'} approved={approved}")
     if ui:
+        ui.pet.set_mood("typing" if approved else "denied")
         ui.print_line(f"[{'green' if approved else 'red'}][GATE][/{'green' if approved else 'red'}] {tool_name}: "
                       f"{'APPROVED by operator' if approved else 'DENIED (fail-closed; timeout or non-affirmative answer)'}")
         if not ui.quiet:

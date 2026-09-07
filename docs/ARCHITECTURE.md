@@ -1,6 +1,6 @@
 # ARCHITECTURE — module boundaries, data flow, and why each seam is where it is
 
-SENTINEL-IR is ~7.7k lines of Python in one package, a 9-module tool registry, and two
+SENTINEL-IR is ~9.2k lines of Python in one package, a 9-module tool registry, and two
 optional back-ends (Docker, JSON-RPC chain). The design goal was not "few files"; it was
 **make every dangerous capability cross exactly one auditable boundary**.
 
@@ -47,6 +47,8 @@ below a boundary are the ones allowed to be dangerous.
 | `blockchain/*` | `evidence.hasher` (canonical JSON) | change a verdict, or run before the verdict is written |
 | `evidence/*` | stdlib only (`email`, `hashlib`, `re`) | network |
 | `ui/console.py` | `rich`, `safety` (tty/key input) | decide anything (display + gate input only) |
+| `ui/pet.py`, `ui/care.py` | stdlib only | import `risk`, `tools`, `evidence`, `net`, `agent`, or read the email (display + wall clock only) |
+| `status.py`, `petwatch.py` | stdlib; `petwatch` may read `ui/pet` + `ui/care` | become evidence: the JSONL is an advisory display, written from enums, and `petwatch` never opens a case file |
 
 Two concrete consequences worth knowing while reading the code:
 
@@ -238,6 +240,25 @@ did* (`gate: auto (demo/--yes)` in the report header). The kill-switch reader is
 thread on the raw TTY (`tty.setraw` in a subshell-safe way): it sets `threading.Event`
 and nothing else — every tool polls that event, so abort latency is bounded by the
 per-tool timeout, not by the UI.
+
+Two display surfaces hang off the same frame, both fed only by the controller:
+
+* `ui/pet.py` — 17 named moods in a fixed 13×6 box (`thinking`, `typing`, `hunting`, `fur`,
+  `bristle`, `steam`, `denied`, `waiting`, `tilt`/`hop`/`arch`, `flee`, plus the four care states).
+  Transient moods decay back to `watching` after `MOOD_HOLD_S` so the cat cannot claim to still be
+  thinking, while `waiting` (the open gate) and the pinned verdict mood do not, because those stay
+  true. `ConsoleUI.set_mood()` is the only entry point, and the module-level UI singleton lets
+  `ask_confirmation` announce that it is blocked on the human — the one moment the UI genuinely
+  needs attention (`set_ui()` in `ui/console.py`, read back as `_ui_singleton`).
+* `ui/care.py` — stretch/water/eyes intervals and an optional Pomodoro, computed from an injectable
+  monotonic clock (`now=`), so it is testable without sleeping and cannot hang a run. The clock
+  fires at most once per interval per reminder and writes to `audit.log`, never into the transcript.
+
+Both are fed from exactly one place in `agent.py` (`_react()`), which passes enums and numbers.
+`status.py` mirrors the same calls into JSONL for external companions; its `note` field is
+vocabulary-checked (`NOTE_VOCAB`) and the `case` field is a digest, because the sink may sit in a
+shared directory. `petwatch.py` is the reader (`sentinel-ir pet`) and drops any mood outside the
+vocabulary, so a line written by someone else cannot invent a reaction.
 
 ---
 

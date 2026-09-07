@@ -39,6 +39,9 @@ from .risk import (ORIGIN_CONFIDENCE_CEILING, RiskState, classify, confidence_sc
 from .safety import KillSwitch
 from .sandbox.docker_runner import docker_available
 from .ui.console import ConsoleUI, set_ui
+from .ui.care import CareClock, parse_pomodoro, parse_reminders
+from .ui.pet import MOOD_FOR_TOOL, VERDICT_MOOD
+from .status import StatusHook, hook_paths_for
 
 EXPECTED_FAMILIES = ("parse_headers", "resolve_origin", "geolocate_ip", "check_tor_exit",
                      "extract_urls", "check_reputation", "static_file_scan", "hash_evidence")
@@ -82,6 +85,11 @@ class Agent:
         self.brain = "deterministic-engine"
         self.aborted = False
         self._prev_sigint: Any = None
+        # Work-status surfaces, created in run() — declared here so `_react()`/teardown stay
+        # safe if run() died before the UI existed (bad .eml path, config error).
+        self.status: Any = None
+        self.care: Any = None
+        self._pomodoro_phase = ""
 
     # ─────────────────────────────────────────────────────────────────────
     def run(self) -> dict[str, Any]:
@@ -104,8 +112,19 @@ class Agent:
                     sha256=sha, md5=md5, size_bytes=len(raw), recorded_before_analysis=True)
         append_audit(self.case_dir, "case_opened", f"{self.eml_path.name} ({len(raw)} bytes) sha256={sha[:16]}…")
 
-        self.ui = ConsoleUI(quiet=self._quiet(), case_name=self.case_id)
+        # Care clock (stretch / water / eyes + optional Pomodoro). Display-only: it holds a
+        # monotonic timestamp and nothing else, and cannot reach the risk state — see ui/care.py.
+        reminders, unknown_reminders = parse_reminders(self.cfg.pet_reminders)
+        self.care = CareClock(enabled=self.cfg.pet_enabled, reminders=reminders,
+                              pomodoro=parse_pomodoro(self.cfg.pet_pomodoro))
+        self.ui = ConsoleUI(quiet=self._quiet(), case_name=self.case_id,
+                            pet_enabled=self.cfg.pet_enabled, pet_fps=self.cfg.pet_fps,
+                            pet_skin=self.cfg.pet_skin, care=self.care)
         set_ui(self.ui)
+        # Append-only work-status hook (runs/<case>/status.jsonl + optional shared sink).
+        self.status = StatusHook(hook_paths_for(self.case_dir, self.cfg.status_hook_path),
+                                 enabled=self.cfg.status_hook_enabled)
+        self._care_notes = list(unknown_reminders)
 
         self.brain, self.engine_note = self._select_brain()
         kill_status = self.switch.start()
@@ -119,6 +138,22 @@ class Agent:
         self.ui.set_badge("sandbox", "docker available" if docker_ok else "subprocess-limited (no docker)")
         self.ui.set_expected(len(EXPECTED_FAMILIES))     # denominator for the coverage bar
         self.ui.set_badge("safety", f"timeout {self.cfg.tool_timeout_s:.0f}s · gate {'on' if self.cfg.require_confirmation and not self.auto_confirm else 'auto (--yes/--demo)'} · kill '{self.switch.key}'")
+        if self._care_notes:
+            # A mistyped reminder key must not silently re-enable a default the operator meant
+            # to disable, so it is reported once, in the same place as every other degraded path.
+            # NB: the label is `care:` not `[care]` — rich would read a bracketed word as a
+            # style tag and swallow it (it did, once, quietly).
+            self.ui.print_line(f"[yellow]care:[/yellow] ignored unknown reminder spec(s): "
+                               f"{', '.join(self._care_notes[:4])} "
+                               f"(valid: eyes, stretch, water — or 'off')")
+        self._react("watching", state="case_opened", note="case-opened")
+        # What the run is actually made of, in enum form — an offline run must not look like
+        # a model run, and a run without docker must not look like a sandboxed one.
+        self.status.emit("engine", mood="watching", case=self.case_id,
+                         note="engine:ollama" if self.brain.startswith("ollama") else "engine:deterministic")
+        self.status.emit("sandbox", mood="watching", case=self.case_id,
+                         note="sandbox:docker" if docker_ok else
+                         ("sandbox:denied" if self.cfg.sandbox_required else "sandbox:subprocess-limited"))
 
         parsed = eml_mod.parse_bytes(raw, path=str(self.eml_path))
         self.ctx = tools_pkg.ToolContext(
@@ -136,6 +171,8 @@ class Agent:
             self.state.signals.append(RiskSignal("prompt_injection_attempt", 1, 70,
                                                  explanation=f"attacker text contains a “{label}” sequence — defanged, refused, and logged as a signal",
                                                  source="harness"))
+        if attempts:
+            self._react("fur", state="injection", note="injection:defanged")
         self.ui.update_scores(risk=self.state.score)
 
         self._fallback = DeterministicEngine()
@@ -240,6 +277,8 @@ class Agent:
             if self.switch.aborted:
                 self.aborted = True
                 break
+            self._check_care()
+            self._react("thinking", state="plan")
             action: Optional[dict[str, Any]] = None
             used_fallback = False
             if getattr(self.engine, "is_llm", False) and not getattr(self, "_llm_quiet", False):
@@ -275,6 +314,7 @@ class Agent:
                 self.ui.update_scores(risk=self.state.score)
                 self.ui.record_step(tool=str(name)[:22] or "(none)", status="⊘", summary="refused: not whitelisted", delta="")
                 self.events.append({"kind": "refusal", "text": f"refused non-whitelisted tool “{name}”"})
+                self._react("fur", state="refused", tool=name[:24], note="refused:non-whitelisted")
                 empty_strikes += 1
                 if empty_strikes >= 3 and getattr(self.engine, "is_llm", False):
                     self._llm_quiet = True
@@ -301,6 +341,7 @@ class Agent:
                 dedup_strikes = 0
             if self.switch.aborted:
                 self.aborted = True
+                self._react("flee", state="aborted", note="partial:aborted")
                 return
 
     def _run_step(self, name: str, args: dict[str, Any], *, thought: str = "", confirm_requested: bool = False) -> None:
@@ -315,7 +356,23 @@ class Agent:
             thought = thought or ""
             self.events.append({"kind": "meta", "text": f"harness inserted [CONFIRM_NEEDED] for {name} because the model requested a file-touching tool without it"})
         before = self.state.score
+        self._react(MOOD_FOR_TOOL.get(name, "typing"), state="tool_start", tool=name)
         result = tools_pkg.dispatch(self.ctx, name, args, confirm_reason=thought[:500])
+        # The reaction follows what actually happened, in priority order: a timeout, a refusal
+        # by the human, then the ordinary "done" tick. Never derived from `result.summary`,
+        # which is text a tool copied out of the email.
+        if result.timed_out:
+            self._react("steam", state="tool_timeout", tool=name, note="timeout:tool")
+        elif result.approved is False:
+            self._react("denied", state="gate", tool=name, note="gate:denied")
+        elif result.approved is True:
+            self._react("typing", state="gate", tool=name, note="gate:approved")
+        elif result.skipped:
+            self._react("watching", state="tool_skipped", tool=name)
+        elif not result.ok:
+            self._react("steam", state="tool_error", tool=name)
+        else:
+            self._react("typing", state="tool_done", tool=name)
         if result.approved is not None:
             self.events.append({"kind": "gate", "tag": "CONFIRM_NEEDED", "decision": "APPROVED" if result.approved else "DENIED",
                                 "text": (result.summary or "")[:200]})
@@ -342,6 +399,47 @@ class Agent:
                                     f"{before:.1f} → {risk_after:.1f} ({why})")
             except Exception:  # noqa: BLE001
                 pass
+
+    # ── work-status reactions (pet + companion hook) ────────────────────────
+    def _react(self, mood: str, *, state: str = "", tool: str = "", note: Any = None) -> None:
+        """One place where a real event becomes (a) a pet mood and (b) a status-hook line.
+
+        Both outputs take enums and numbers only — `mood` from `ui/pet.MOODS`, `tool` from the
+        whitelist, `risk` from the harness score. Tool summaries and any other email-derived
+        string are deliberately not passed here: the pet panel and the JSONL hook are displays,
+        and a display an attacker can write to is not a display, it is a channel.
+        """
+        if self.ui is not None:
+            self.ui.set_mood(mood, tool=tool)
+        hook = getattr(self, "status", None)
+        if hook is not None:
+            hook.emit(state or mood, mood=mood, tool=tool, case=self.case_id,
+                      risk=self.state.score, note=note)
+
+    def _check_care(self) -> None:
+        """Human-factors reminders (stretch / water / eyes, optional Pomodoro).
+
+        These fire on wall-clock time and change nothing about the case — they are here because
+        the reference product's other half is caring for the operator during a long session, and
+        a 3-hour manual review is exactly when someone forgets to stand up.
+        """
+        care = getattr(self, "care", None)
+        if care is None:
+            return
+        for rem in care.due():
+            if self.ui is not None:
+                self.ui.show_care(rem.label, mood=rem.mood)
+            self._react(rem.mood, state="care", note=f"care:{rem.key}")
+            # Recorded in the audit log (what happened during the case) but NOT in the transcript:
+            # report.md is a forensic document about the email, and operator wellbeing notes do
+            # not belong in it. Same reason `care` never appears as an event kind.
+            append_audit(self.case_dir, "care_reminder",
+                         f"{rem.key}: {rem.label} (operator reminder, not case evidence)")
+        phase = care.mood_for_pomodoro()
+        if phase != getattr(self, "_pomodoro_phase", ""):
+            self._pomodoro_phase = phase
+            if phase:
+                self._react(phase, state="pomodoro", note="care:focus" if phase == "sentry" else "care:break")
 
     def _update_origin_panel(self) -> None:
         origin = dict(self.ctx.state.get("origin") or {}) if self.ctx else {}
@@ -403,6 +501,7 @@ class Agent:
                                                      explanation="EVIDENCE INTEGRITY: " + broken,
                                                      source="hash_evidence"))
                 append_audit(self.case_dir, "integrity_failure", broken)
+                self._react("bristle", state="custody", note="custody:broken")
 
         geo_primary = ((st.get("geolocate") or {}).get("primary") or {}).get("consensus") or {}
         families = {s.source for s in self.state.signals if s.source}
@@ -540,6 +639,20 @@ class Agent:
         assert self.ctx is not None
         case = self._case_meta(sha)
         chain = self._log_to_chain(verdict, sha)
+        # Chain state on the hook, as an enum: an analyst watching a companion should be able
+        # to tell "anchored locally" from "written on-chain" from "failed" without opening files.
+        if self.status is not None:
+            # Read the record the way `_log_to_chain` actually writes it: a block carries
+            # `index`/`hash`; "no testnet reachable" is a `skipped` ganache note, NOT a failure.
+            if chain.get("error"):
+                self.status.emit("chain", mood="bristle", case=self.case_id, note="chain:failed")
+            elif chain.get("index") is not None:
+                self.status.emit("chain", mood="typing", case=self.case_id, note="chain:written")
+                ganache = chain.get("ganache") or {}
+                if ganache.get("tx_hash"):
+                    self.status.emit("chain", mood="hop", case=self.case_id, note="chain:onchain")
+                elif ganache.get("skipped") or ganache.get("error"):
+                    self.status.emit("chain", mood="watching", case=self.case_id, note="chain:skipped")
         report, machine = write_report(self.case_dir, case=case, events=self.events, results=self.results,
                                        verdict=verdict, chain=chain,
                                        signals=[sig.as_dict() for sig in self.state.signals])
@@ -547,6 +660,13 @@ class Agent:
         verdict["run_json"] = str(machine)
         verdict["chain"] = chain
         verdict["elapsed_s"] = round(time.monotonic() - t_start, 2)
+        # The closing reaction: pinned so it stays on screen while the summary is read, and
+        # mirrored into the hook so an external companion ends on the same three-value answer.
+        self.ui.set_mood(VERDICT_MOOD.get(verdict["verdict"], "watching"), pin=True)
+        if self.status is not None:
+            self.status.emit("verdict", mood=VERDICT_MOOD.get(verdict["verdict"], "watching"),
+                             case=self.case_id, risk=verdict["risk"], verdict=verdict["verdict"],
+                             confidence=verdict["confidence"], note="verdict-recorded")
         if self.ui:
             self.ui.verdict_panel(verdict=verdict["verdict"], confidence=verdict["confidence"], risk=verdict["risk"],
                                   bullets=verdict["evidence"] + ([f"⚠ unobserved: {g}" for g in verdict["gaps"]][:3]),
@@ -621,6 +741,9 @@ class Agent:
 
     # ── teardown ───────────────────────────────────────────────────────────
     def close(self) -> None:
+        if self.status is not None:
+            self.status.emit("aborted" if self.aborted else "closed", case=self.case_id,
+                             risk=self.state.score)
         if self.ui:
             self.ui.stop()
         self.switch.disarm()
