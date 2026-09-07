@@ -1,7 +1,7 @@
 # SENTINEL-IR — build report (what was asked, what exists, what was measured)
 
-Repo: `/home/user/email` · package `cybersecurity_agent/` · 9 281 lines of Python (46 modules) +
-2 609 lines of tests (144 tests) + 3 shell scripts (`setup.sh`, `compile_contract.sh`, `demo.sh`) + 1 Solidity contract + 4 sample `.eml`.
+Repo: `/home/user/email` · package `cybersecurity_agent/` · 9 291 lines of Python (46 modules) +
+2 676 lines of tests (145 tests) + 3 shell scripts (`setup.sh`, `compile_contract.sh`, `demo.sh`) + 1 Solidity contract + 4 sample `.eml`.
 Everything below was verified in this sandbox on 2026-09-07; commands are copy-pasteable.
 
 ---
@@ -123,7 +123,7 @@ $ python -m cybersecurity_agent selftest
     ledger tamper detected, and the pet/status display containment holds: 17 moods,
     uniform live box, 26-entry note vocabulary, attacker-shaped notes dropped)
 $ .venv/bin/python -m pytest tests -q
-→ 144 passed in ~6.3 s, no network egress needed
+→ 145 passed in ~6.5 s, no network egress needed
 
 # the guided demo (offline, four samples) — verdict lines and the exit codes, verbatim
 $ ./scripts/demo.sh
@@ -207,6 +207,14 @@ Transcript: `DEMO.md` (generated, not hand-written).
     accept, an env var nothing reads, a diagram copy that drifted, or a mention of a web UI without
     the negation that makes it a non-goal. It caught a stale per-file test count on its first run —
     which is the whole reason to automate the claim instead of re-reading it.
+14. **CI from a clean checkout found a defect no local run could:** `tests/test_ganache_logger.py`
+    imported `ganache_logger`, whose `SELECTOR` is computed with keccak at import time, and keccak
+    *refuses* to run without the optional `pycryptodome` extra — so on a machine that satisfies the
+    documented promise ("the suite needs `rich` + `dnspython` + pytest"), the run died as a collection
+    error rather than a skip. This repo's `.venv` happens to have that extra, so 145 tests passed
+    locally and lied about portability. Now the file `importorskip`s and CI carries a second job that
+    installs `.[chain]` and runs it, so the optional back-end is still tested. Lesson kept: a test
+    suite is only as portable as its *cleanest* install, and only CI can measure that.
 
 ---
 
@@ -244,7 +252,7 @@ Transcript: `DEMO.md` (generated, not hand-written).
 3. `docs/FORENSIC_METHODOLOGY.md` — the full weight table, fusion math, the origin ladder,
    what each report line means, and what "unobserved" implies.
 4. `cybersecurity_agent/agent.py` → `tools/dispatch.py` → `risk.py` → `blockchain/hashchain.py`.
-5. `tests/` (12 test files + `conftest.py`, 144 tests) — each test name states the claim it defends.
+5. `tests/` (11 test files + `conftest.py`, 145 tests) — each test name states the claim it defends.
 6. `CONTRIBUTING.md` · `SECURITY.md` · `CHANGELOG.md` · `.github/` — how to change this safely,
    what counts as a vulnerability in a tool whose job is holding hostile input at arm's length,
    what the version number commits to, and what CI gates (suite + selftest + demo + docs test).

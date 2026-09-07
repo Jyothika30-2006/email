@@ -1,6 +1,6 @@
 # ARCHITECTURE — module boundaries, data flow, and why each seam is where it is
 
-SENTINEL-IR is 9 281 lines of Python in one package, a 9-module tool registry, and two
+SENTINEL-IR is 9 291 lines of Python in one package, a 9-module tool registry, and two
 optional back-ends (Docker, JSON-RPC chain). The design goal was not "few files"; it was
 **make every dangerous capability cross exactly one auditable boundary**.
 

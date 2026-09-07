@@ -71,6 +71,32 @@ jobs:
           path: ${{ runner.temp }}/demo.log
           if-no-files-found: ignore
 
+  # The suite's promise is that it runs on `rich` + `dnspython` + pytest and nothing else, and
+  # that the optional extras are real. Both halves need a job: `test` proves the first (it would
+  # have died here if an optional import were mandatory), this one proves the second.
+  chain-extras:
+    name: optional '.[chain]' extra
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SENTINEL_DNS_STRICT: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: install with the optional crypto extra
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -e ".[dev,chain]"
+      - name: tests that skip without pycryptodome must pass with it
+        run: python -m pytest tests/test_ganache_logger.py -q --color=yes
+      - name: and the suite must agree with itself either way
+        run: python -m pytest tests -q --color=yes
+
   quality:
     name: lint
     runs-on: ubuntu-latest
@@ -102,3 +128,7 @@ jobs:
           pip install -r requirements.txt
           pip install -e ".[dev]"
           python -m pytest tests/test_docs_are_honest.py -q --color=yes
+
+      # The gate that found two real bugs before anyone thought to look for them.
+      - name: ruff version used
+        run: ruff --version

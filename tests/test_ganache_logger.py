@@ -14,6 +14,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
+# `keccak256` refuses to run without pycryptodome rather than fake an evidence hash (see
+# pure_python_crypto), and importing ganache_logger computes SELECTOR with it. So the whole
+# file must *skip* — not error — when the optional extra is absent: the documented promise is
+# that the suite runs on `rich` + `dnspython` + pytest and nothing else. CI runs this file a
+# second time with `.[chain]` installed so the optional path stays genuinely covered.
+pytest.importorskip("Crypto.Hash.keccak", reason="optional '.[chain]' extra not installed")
+
 REPO = Path(__file__).resolve().parents[1]
 
 from cybersecurity_agent.blockchain.ganache_logger import SELECTOR

@@ -5,7 +5,7 @@
 # IP address is ever touched. The exit code of each investigation IS the verdict
 # (0 SAFE · 1 SUSPICIOUS · 2 MALICIOUS), so this script doubles as a smoke test.
 #
-#   ./scripts/demo.sh              # full guided demo (≈40 s)
+#   ./scripts/demo.sh              # full guided demo (≈5 s warm, all 8 steps)
 #   ./scripts/demo.sh --quick      # two samples, skip the mood gallery + skins
 #   PORT=8123 ./scripts/demo.sh    # use a different mock-apis port
 #

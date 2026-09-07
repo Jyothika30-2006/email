@@ -49,7 +49,7 @@ A change that weakens any of these needs a very good reason in the PR descriptio
 
 ## Documentation numbers
 
-If you write a number into a doc (`144 tests`, `2 609 lines`, `15 s`, `cap 68 %`, `17 moods`,
+If you write a number into a doc (`145 tests`, `2 676 lines`, `15 s`, `cap 68 %`, `17 moods`,
 `≈9.3k lines`), run the command that measures it, in this checkout, at that moment.
 `tests/test_docs_are_honest.py` checks the counts, the diagram copies, the documented flags and the
 documented env vars against the code, and it fails on a stale per-file test count too. When it

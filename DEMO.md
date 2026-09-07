@@ -414,6 +414,6 @@ python -m cybersecurity_agent selftest | tail -2
 ## The suite behind the demo
 
 ```bash
-.venv/bin/python -m pytest tests -q      # 144 passed in ~6.3 s, no network egress needed
+.venv/bin/python -m pytest tests -q      # 145 passed in ~6.5 s, no network egress needed
 
 ```

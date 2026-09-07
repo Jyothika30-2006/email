@@ -8,8 +8,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+from pathlib import Path
 
 from cybersecurity_agent.blockchain.hashchain import HashChain, evidence_payload
+
+REPO = Path(__file__).resolve().parents[1]
+SAMPLES = REPO / "samples"
 
 
 def _p(**kw):
@@ -134,3 +138,47 @@ def test_attachments_are_hashed_at_staging_time(cfg, tmp_path):
     assert att and att[0]["recorded_before_analysis"] is True
     src = [r for r in manifest["records"] if r["kind"] == "source_email"]
     assert src and src[0]["sha256"] == verdict["sha256"]
+
+
+def test_a_missing_optional_crypto_extra_degrades_the_mirror_not_the_case(tmp_path, monkeypatch):
+    """`.[chain]` is optional and `keccak256` refuses to be faked — so on a machine that
+    installs only the two runtime deps, importing the Ganache logger raises at *import time*
+    (it computes the contract selector with keccak).
+
+    That used to end a completed investigation with a traceback after the verdict was already
+    printed, which is the worst possible place to fail: the analyst has the answer and no
+    artifacts. Found by running the suite in a venv without pycryptodome, i.e. by CI.
+    """
+    import sys
+
+    from cybersecurity_agent.blockchain import pure_python_crypto as ppc
+    from cybersecurity_agent.blockchain.pure_python_crypto import KeccakUnavailable
+
+    def broken_keccak(_data: bytes) -> bytes:
+        raise KeccakUnavailable("keccak256 needs `pycryptodome` (simulated: optional extra absent)")
+
+    monkeypatch.setattr(ppc, "keccak256", broken_keccak)
+    # Only the *dependent* module is re-imported, so it binds the broken keccak above while
+    # pure_python_crypto itself stays patched-and-intact for everything else in the session.
+    sys.modules.pop("cybersecurity_agent.blockchain.ganache_logger", None)
+    try:
+
+        from cybersecurity_agent.agent import Agent
+
+        agent = Agent(SAMPLES / "phishing_obvious.eml", demo=True, no_llm=True, case_prefix=tmp_path,
+                      cfg_overrides={"tool_timeout_s": 8.0, "max_agent_steps": 12,
+                                     "geoip_allow_private": True, "require_confirmation": False,
+                                     "auto_confirm": True, "offline": False, "sandbox_required": False})
+        verdict = agent.run()                                                  # must not raise
+        agent.close()
+    finally:
+        # leave no module whose SELECTOR was computed against the simulated failure
+        sys.modules.pop("cybersecurity_agent.blockchain.ganache_logger", None)
+        monkeypatch.undo()
+
+    assert verdict["verdict"] == "MALICIOUS", "the verdict path cannot depend on an optional extra"
+    assert (Path(verdict["report"]).parent / "evidence.json").exists()
+    chain = verdict.get("chain") or {}
+    ganache = chain.get("ganache") or {}
+    assert ganache.get("skipped") is True, f"mirror must report a labelled skip, got {ganache!r}"
+    assert ".[chain]" in ganache.get("note", ""), "and say how to switch it on"

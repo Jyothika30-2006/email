@@ -3,7 +3,7 @@
 ![python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776ab?logo=python&logoColor=white)
 ![runtime deps](https://img.shields.io/badge/runtime%20deps-2-informational)
 ![license](https://img.shields.io/badge/license-MIT-green)
-![tests](https://img.shields.io/badge/tests-144-brightgreen)
+![tests](https://img.shields.io/badge/tests-145-brightgreen)
 ![ci](https://github.com/Jyothika30-2006/email/actions/workflows/ci.yml/badge.svg)
 ![offline](https://img.shields.io/badge/offline--first-yes-blueviolet)
 ![telemetry](https://img.shields.io/badge/telemetry-none-critical)
@@ -552,7 +552,7 @@ reminders for the human doing the reading.
 
 ## 13. Tests & demo harness
 ```bash
-.venv/bin/python -m pytest tests -q          # 144 tests in ~6.3 s, no network egress needed
+.venv/bin/python -m pytest tests -q          # 145 tests in ~6.5 s, no network egress needed
 python -m cybersecurity_agent selftest       # 7 checks: 9-tool registry, whitelist refuses
                                              # 'shell', timeout raises, fuse math, a deliberately
                                              # tampered ledger is detected, the pet/hook display
@@ -603,7 +603,7 @@ investigations leave it off.
 
 ## 14. Project layout
 ```
-cybersecurity_agent/            (9 281 lines in 46 files; stdlib + rich + dnspython only)
+cybersecurity_agent/            (9 291 lines in 46 files; stdlib + rich + dnspython only)
 ├── cli.py                 argparse: investigate | analyze-file | chain | pixel-listen | mock-apis | pet | selftest
 ├── agent.py               Agent controller: THINK→CHOOSE→ACT→OBSERVE loop, custody, gate, verdict, report
 ├── config.py              every tunable (timeouts, endpoints, sandbox policy, caps) + secret redaction
@@ -655,7 +655,7 @@ samples/                   4 .eml (clean · obvious phishing · subtle Gmail BEC
   ├── payloads/            macro stub / renamed-EXE / EICAR (all harmless) + fixtures/
   └── fixtures/            dns_fixtures.json · tor_exit_ips.txt (demo/CI determinism)
 scripts/                   generate_samples.py · setup.sh · compile_contract.sh · demo.sh
-tests/                   144 tests (2 609 lines) — see §13; `test_docs_are_honest.py` is the one that fails
+tests/                   145 tests (2 676 lines) — see §13; `test_docs_are_honest.py` is the one that fails
                            when a README number, a documented flag or a diagram copy goes stale
 .github/                 ci.yml (suite · selftest · demo on 3.10/3.11/3.12) · issue + PR templates
 SECURITY.md              what counts as a vulnerability *here*, and what is deliberately not one

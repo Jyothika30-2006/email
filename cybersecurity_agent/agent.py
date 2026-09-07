@@ -720,7 +720,17 @@ class Agent:
         from .safety import run_with_timeout  # local import: keeps module import graph light
         """Optional on-chain mirror. Bounded hard, and it runs AFTER the verdict is
         already shown — blockchain is chain-of-custody, never the detection path."""
-        from .blockchain.ganache_logger import GanacheError, GanacheLogger, ping
+        try:
+            # `ganache_logger` computes the contract selector with keccak at import time, and
+            # keccak refuses to run without the optional `.[chain]` extra. Importing it must
+            # therefore never be on the critical path of a run: a missing crypto dependency is
+            # a labelled degradation, not a traceback after the verdict.
+            from .blockchain.ganache_logger import GanacheError, GanacheLogger, ping
+        except Exception as exc:  # noqa: BLE001 - KeccakUnavailable (and anything else import-time)
+            return {"ok": False, "skipped": True,
+                    "note": f"on-chain mirror unavailable ({type(exc).__name__}: {str(exc)[:140]}) — "
+                            f"install the optional extra with `pip install -e '.[chain]'`; "
+                            f"the local hash-chain remains the record"}
 
         ok, note, _info = ping(self.cfg.ganache_rpc_url)
         if not ok:

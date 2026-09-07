@@ -70,6 +70,12 @@ Everything the README describes, as measured in this repository. First public sh
   shadowed the first); the duplicates are gone (`ruff` `F811`).
 - `tools/base.py` annotated `switch: Optional[KillSwitch]` without importing the type — fine at
   runtime under `from __future__ import annotations`, wrong for any type checker.
+- `tests/test_ganache_logger.py` was a **collection error** on any machine without the optional
+  `.[chain]` extra: importing `ganache_logger` computes `SELECTOR` with keccak, and keccak refuses
+  to run without `pycryptodome` by design. The suite's own promise is "two runtime deps and pytest",
+  so the file now `importorskip`s, and CI runs a second job that installs `.[chain]` and executes it
+  — otherwise "skipped" would just be a comfortable way to stop testing the on-chain mirror.
+  (Found by running CI from a clean checkout, which is the only way to find this class of bug.)
 - `investigate --json` writes its summary *after* the live UI on the same stdout, which makes
   `… --json | jq` unusable. Documented, and the demo and tests read `runs/<case>/run.json`
   instead of trying to parse the pipe.
