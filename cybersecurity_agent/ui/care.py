@@ -125,7 +125,9 @@ class CareClock:
         """One dim line under the cat: what is next, plus Pomodoro state if it is running."""
         bits: list[str] = []
         if self.enabled and self.reminders:
-            bits.append(f"next break in {self.minutes_to_next():.0f} min")
+            left = self.minutes_to_next()
+            # "next break in 0 min" would be a lie in both directions — say what it means.
+            bits.append("break due now" if left < 1 else f"next break in {left:.0f} min")
         if self.pomodoro is not None:
             line = self.pomodoro.line(self.now())
             if line:

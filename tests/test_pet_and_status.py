@@ -360,6 +360,30 @@ def test_care_notes_land_in_the_audit_log_not_the_forensic_report(tmp_path, monk
     assert v["verdict"] == "SAFE" and v["risk"] < 30, "and a nag must not move the score"
 
 
+def test_two_runs_in_the_same_second_do_not_share_a_case_dir(tmp_path):
+    """A demo loop runs a file twice in under a second. Two cases must never mix artifacts —
+    that is chain of custody, not tidiness."""
+    from cybersecurity_agent.agent import _case_id
+
+    root = tmp_path / "runs"
+    root.mkdir()
+    eml = tmp_path / "phishing_obvious.eml"
+    eml.write_bytes(b"Subject: x\n\nbody\n")
+    ids = [_case_id(eml, root) for _ in range(3)]
+    # the ids alone can repeat (the dir is what disambiguates), so prove it with real dirs
+    made = []
+    for _ in range(3):
+        cid = _case_id(eml, root)
+        (root / cid).mkdir()
+        made.append(cid)
+    assert len(set(made)) == 3, f"case ids collided: {made}"
+    assert made[0].split("-")[-2:] == ["phishing", "obvious"] or made[0].endswith("phishing_obvious")
+    from datetime import datetime, timezone
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    assert _case_id(eml) == f"{stamp}-phishing_obvious", "without a root, id = timestamp + stem"
+    assert (root / made[1]).name.endswith("phishing_obvious-2"), made[1]
+
+
 def test_pet_off_and_hook_off_are_independent(tmp_path, monkeypatch):
     monkeypatch.setenv("SENTINEL_DNS_FIXTURES", str(SAMPLES / "fixtures" / "dns_fixtures.json"))
     from cybersecurity_agent.agent import Agent

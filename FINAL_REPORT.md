@@ -1,7 +1,7 @@
 # SENTINEL-IR — build report (what was asked, what exists, what was measured)
 
 Repo: `/home/user/email` · package `cybersecurity_agent/` · 9.2k lines of Python (46 modules) +
-2.20k lines of tests (127 tests) + 2 shell scripts + 1 Solidity contract + 4 sample `.eml`.
+2.22k lines of tests (128 tests) + 2 shell scripts + 1 Solidity contract + 4 sample `.eml`.
 Everything below was verified in this sandbox on 2026-09-07; commands are copy-pasteable.
 
 ---
@@ -120,10 +120,31 @@ $ python -m cybersecurity_agent analyze-file samples/payloads/macro_dropper.bin 
 → flags embedded_macro / suspicious VBA strings / high entropy, without executing anything
 $ python -m cybersecurity_agent selftest
 → ✅ all safety invariants hold (9 tools registered, 'shell' refused, timeout raises,
-    ledger tamper detected)
+    ledger tamper detected, and the pet/status display containment holds: 17 moods,
+    uniform live box, 26-entry note vocabulary, attacker-shaped notes dropped)
 $ .venv/bin/python -m pytest tests -q
-→ 106 passed in 6.5 s, no network egress needed
+→ 128 passed in ~7 s, no network egress needed
+
+# the guided demo (offline, four samples) — verdict lines and the exit codes, verbatim
+$ ./scripts/demo.sh
+── 2.1 · investigate samples/clean_newsletter.eml …
+   exit=0  →  SAFE  ·  confidence 76.5%  ·  risk 23.5/100
+── 2.2 · investigate samples/phishing_obvious.eml …
+   exit=2  →  MALICIOUS  ·  confidence 90.1%  ·  risk 99.0/100
+── 2.3 · investigate samples/gmail_bec_subtle.eml …
+   exit=1  →  SUSPICIOUS  ·  confidence 76.1%  ·  risk 33.1/100
+── 2.4 · investigate samples/tor_exit_legit.eml …
+   exit=0  →  SAFE  ·  confidence 86.3%  ·  risk 23.8/100
+── 3 · runs/<case>/status.jsonl …
+   attacker/case text in the status file: 0 lines
+── 6 · proof the surface cannot move the case: same file, pet on vs pet off
+   pet on : SAFE 23.8 86.3 spf_client_ip ['parse_headers', 'extract_urls', 'resolve_origin',
+             'geolocate_ip', 'check_tor_exit', 'check_reputation']
+   pet off: SAFE 23.8 86.3 spf_client_ip ['parse_headers', 'extract_urls', 'resolve_origin',
+             'geolocate_ip', 'check_tor_exit', 'check_reputation']
+   → identical verdict, risk, confidence, origin kind and executed plan ✓
 ```
+Transcript: `DEMO.md` (generated, not hand-written).
 
 ---
 
@@ -154,6 +175,19 @@ $ .venv/bin/python -m pytest tests -q
    logger's selector string never drift apart (that drift is the classic silent on-chain bug).
 7. **`--demo`/`--yes` weaken the gate but never hide it** — `gate: auto (demo/--yes)` is in the
    report header, and `--chain-backend`/mock endpoints are echoed too.
+8. **A mascot is allowed, but only as a display.** The requested work-status reactions
+   (`ui/pet.py`, `ui/care.py`, `status.py`, `petwatch.py`) are the only non-forensic UI surface in
+   the project, and they are fenced by construction rather than by intent: frames are constants
+   (`_pad` to a fixed 13×6 box), the caption is enums + numbers, the JSONL `note` must be in
+   `NOTE_VOCAB` or it is dropped and marked, `case` is a digest, the modules import nothing from
+   the evidence path (AST-checked), and care reminders are recorded in `audit.log` but excluded from
+   `report.md`. Reviewers who dislike it get `--no-pet --no-status-hook`, and step 6 of the demo
+   proves that path is forensically identical.
+9. **A defect the demo itself found, then fixed:** `_case_id()` was `timestamp(1 s) + stem`, so two
+   runs of the same file inside one second computed the *same* case dir and quietly shared it — the
+   second run appended to the first case's `audit.log` and saw its `status.jsonl`. That is a custody
+   problem, not a cosmetic one, so the id now carries a `-2`/`-3` counter when the directory exists
+   (`test_two_runs_in_the_same_second_do_not_share_a_case_dir`).
 
 ---
 
@@ -183,9 +217,10 @@ $ .venv/bin/python -m pytest tests -q
 
 ## 5. Files to read, in this order
 
-1. `README.md` — pitch, safety model (§6), exact commands, honest limitations (§14).
+1. `README.md` — pitch, safety model (§6), exact commands, honest limitations (§15);
+   `DEMO.md` + `scripts/demo.sh` for a captured, reproducible walkthrough.
 2. `docs/ARCHITECTURE.md` — module boundaries/trust model, the three "brains", extension points.
 3. `docs/FORENSIC_METHODOLOGY.md` — the full weight table, fusion math, the origin ladder,
    what each report line means, and what "unobserved" implies.
 4. `cybersecurity_agent/agent.py` → `tools/dispatch.py` → `risk.py` → `blockchain/hashchain.py`.
-5. `tests/` (11 files, 127 tests) — each test name states the claim it defends.
+5. `tests/` (11 files, 128 tests) — each test name states the claim it defends.

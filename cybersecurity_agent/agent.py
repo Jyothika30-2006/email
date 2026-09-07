@@ -97,9 +97,11 @@ class Agent:
         if not self.eml_path.exists() or not self.eml_path.is_file():
             raise SystemExit(f"[sentinel] no such .eml file: {self.eml_path}")
 
-        self.case_id = _case_id(self.eml_path)
-        self.started_iso = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        # runs_root first: `_case_id` has to look at it, because ids are only unique to the
+        # second and two runs in the same second must not share a case directory.
         self.runs_root = Path(self.case_prefix) if self.case_prefix else RUNS_DIR
+        self.case_id = _case_id(self.eml_path, self.runs_root)
+        self.started_iso = datetime.now(timezone.utc).isoformat(timespec="seconds")
         self.case_dir = self.runs_root / self.case_id
         self.case_dir.mkdir(parents=True, exist_ok=True)
 
@@ -758,8 +760,24 @@ class Agent:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-def _case_id(path: Path) -> str:
-    return f"{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}-{re.sub(r'[^A-Za-z0-9._-]', '_', path.stem)[:44]}"
+def _case_id(path: Path, runs_root: Optional[Path] = None) -> str:
+    """UTC timestamp + evidence filename stem, e.g. `20260907T161142Z-phishing_obvious`.
+
+    The timestamp has second granularity, so two runs of the same file in the same second used to
+    compute the *same* id and share a case directory — which silently interleaved two cases'
+    artifacts (audit entries, `evidence.json`, the reply draft, the status trail). For a tool whose
+    whole promise is chain of custody that is a defect, not a cosmetic wart, so the id now carries
+    a disambiguating counter whenever the directory already exists.
+    """
+    stem = re.sub(r"[^A-Za-z0-9._-]", "_", path.stem)[:44]
+    base = f"{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}-{stem}"
+    if runs_root is None:
+        return base
+    root, cand, n = Path(runs_root), base, 2
+    while (root / cand).exists():
+        cand = f"{base}-{n}"
+        n += 1
+    return cand
 
 
 def _trim(obj: Any, limit: int) -> Any:

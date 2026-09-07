@@ -142,9 +142,14 @@ class ConsoleUI:
             #     addresses are never echoed here: this panel is a display an attacker's text
             #     must not be able to speak through.
             style = style_for(self.pet.mood, self.pet.skin)
-            risk_text.append("\n" + status_caption(self.pet.mood, tool=self.current_tool,
-                                                    risk=self.risk), style="dim")
+            caption = status_caption(self.pet.mood, tool=self.current_tool, risk=self.risk)
             care_line = self.pet.care_line() or (self.care.caption() if self.care is not None else "")
+            # While a care mood is on screen its label *is* the reminder, so suppress a care line
+            # that the caption already carries — one line per fact. (The Pomodoro timer line does
+            # not collide: "pomodoro focus block · 18 s left" adds information the mood omits.)
+            if care_line and care_line.rstrip(" .") in caption:
+                care_line = ""
+            risk_text.append("\n" + caption, style="dim")
             if care_line:
                 # A reminder about the human, not the case — visually separate, and dim.
                 risk_text.append("\n" + care_line, style="grey58")

@@ -170,6 +170,8 @@ runs/<case>/run.json        machine-readable: case/events/results/verdict/chain/
 runs/<case>/evidence.json   chain-of-custody manifest (hash-before-analysis)
 runs/<case>/audit.log       append-only timestamped audit entries
 runs/<case>/status.jsonl    work-status events for the pet/companion display (enums only, §12)
+                             case ids are unique per run — two runs of one file in the same
+                             second get `-2`, `-3`… so no two cases ever share a directory
 evidence/hashchain.jsonl    tamper-evident evidence chain (append-only ledger)
 ```
 Verify the ledger any time:
@@ -181,6 +183,12 @@ Exit codes are verdicts, for transport hooks (`exit 2` = MALICIOUS):
 ```bash
 python -m cybersecurity_agent investigate mail.eml --demo   # 0 SAFE · 1 SUSPICIOUS · 2 MALICIOUS
 ```
+One scripted walkthrough of everything above — selftest, all 17 moods, the four samples, the status
+hook, the companion, a care reminder, the skins, and the pet-on/pet-off parity check:
+```bash
+./scripts/demo.sh            # ≈5 s, offline; doubles as a smoke test (non-zero ⇒ one claim broke)
+```
+Its captured transcript, with what backs each claim, is [`DEMO.md`](DEMO.md).
 Also useful for triage of a standalone attachment (refuses without an explicit
 acknowledgement of authorization):
 ```bash
@@ -419,7 +427,8 @@ in code rather than by good intentions:
 * readers drop any `mood` outside the vocabulary, so a line written by someone else cannot invent a
   reaction ("state: SAFE, note: nothing to see" is the obvious attack, and it renders as `watching`).
 
-All of it is opt-out, and none of it can change an outcome:
+`./scripts/demo.sh` draws all 17 moods and runs the on/off parity check; [`DEMO.md`](DEMO.md) keeps
+the captured transcript. All of it is opt-out, and none of it can change an outcome:
 
 ```bash
 sentinel-ir investigate samples/phishing_obvious.eml --no-pet         # no cat, no reminders
@@ -454,7 +463,7 @@ reminders for the human doing the reading.
 
 ## 13. Tests & demo harness
 ```bash
-.venv/bin/python -m pytest tests -q          # 127 tests in ~7 s, no network egress needed
+.venv/bin/python -m pytest tests -q          # 128 tests in ~7 s, no network egress needed
 python -m cybersecurity_agent selftest       # 6 checks: 9-tool registry, whitelist refuses
                                              # 'shell', timeout raises, fuse math, a deliberately
                                              # tampered ledger is detected, and the pet/hook
@@ -555,12 +564,13 @@ cybersecurity_agent/            (≈9.2k lines, 46 files; stdlib + rich + dnspyt
 samples/                   4 .eml (clean · obvious phishing · subtle Gmail BEC · Tor exit)
   ├── payloads/            macro stub / renamed-EXE / EICAR (all harmless) + fixtures/
   └── fixtures/            dns_fixtures.json · tor_exit_ips.txt (demo/CI determinism)
-scripts/                   generate_samples.py · setup.sh · compile_contract.sh
-tests/                     127 tests (2 198 lines) — see §13
+scripts/                   generate_samples.py · setup.sh · compile_contract.sh · demo.sh
+tests/                     128 tests (2 222 lines) — see §13
 config/default.env.example every SENTINEL_* knob, commented
 docs/ARCHITECTURE.md       module boundaries, trust model, the three brains, extension points
 docs/FORENSIC_METHODOLOGY.md  weights, fusion math, confidence semantics, how to read a report
 FINAL_REPORT.md            requirement-by-requirement ledger + measured results + limitations
+DEMO.md                    captured transcript of ./scripts/demo.sh + what tests each claim
 ```
 
 ## 15. Honest limitations
