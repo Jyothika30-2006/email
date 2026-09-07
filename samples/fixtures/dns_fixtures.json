@@ -1,0 +1,14 @@
+{
+  "payload01.secure-p0nyail.com": [
+    "203.0.113.77"
+  ],
+  "secure-p0nyail.com": [
+    "203.0.113.66"
+  ],
+  "corp-portal-secure.com": [
+    "203.0.113.88"
+  ],
+  "mail2.tor-relay.invalid": [
+    "198.51.100.24"
+  ]
+}

@@ -1,0 +1,28 @@
+# ── local environment / caches ────────────────────────────────────────────────
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+
+# ── case output: evidence belongs on the analyst's disk, not in git ───────────
+# runs/ holds the raw attachment copies and report.md for each investigation, and
+# evidence/ holds the append-only ledger. Committing either would (a) leak
+# potentially sensitive mail and (b) make the hash-chain trivially forgeable —
+# anyone with a git push could rewrite history and re-commit a "valid" chain.
+runs/
+evidence/*
+!evidence/.gitkeep
+artifacts/
+out/
+cache/
+
+# ── secrets ───────────────────────────────────────────────────────────────────
+.env
+*.key
+config/local.env

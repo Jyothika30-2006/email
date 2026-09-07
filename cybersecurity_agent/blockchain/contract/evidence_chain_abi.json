@@ -1,0 +1,146 @@
+[
+ {
+  "type": "constructor",
+  "stateMutability": "nonpayable",
+  "inputs": []
+ },
+ {
+  "type": "function",
+  "name": "submitEvidence",
+  "stateMutability": "nonpayable",
+  "inputs": [
+   {
+    "name": "fileHash",
+    "type": "bytes32"
+   },
+   {
+    "name": "payloadDigest",
+    "type": "bytes32"
+   },
+   {
+    "name": "verdict",
+    "type": "bytes32"
+   },
+   {
+    "name": "confidenceBps",
+    "type": "uint64"
+   }
+  ],
+  "outputs": [
+   {
+    "name": "seq",
+    "type": "uint256"
+   }
+  ]
+ },
+ {
+  "type": "function",
+  "name": "evidenceCount",
+  "stateMutability": "view",
+  "inputs": [],
+  "outputs": [
+   {
+    "name": "",
+    "type": "uint256"
+   }
+  ]
+ },
+ {
+  "type": "function",
+  "name": "getEvidenceAt",
+  "stateMutability": "view",
+  "inputs": [
+   {
+    "name": "seq",
+    "type": "uint256"
+   }
+  ],
+  "outputs": [
+   {
+    "name": "fileHash",
+    "type": "bytes32"
+   },
+   {
+    "name": "payloadDigest",
+    "type": "bytes32"
+   },
+   {
+    "name": "verdict",
+    "type": "bytes32"
+   },
+   {
+    "name": "confidenceBps",
+    "type": "uint64"
+   },
+   {
+    "name": "timestamp",
+    "type": "uint256"
+   }
+  ]
+ },
+ {
+  "type": "function",
+  "name": "verdictAt",
+  "stateMutability": "view",
+  "inputs": [
+   {
+    "name": "seq",
+    "type": "uint256"
+   }
+  ],
+  "outputs": [
+   {
+    "name": "",
+    "type": "string"
+   }
+  ]
+ },
+ {
+  "type": "function",
+  "name": "genesis",
+  "stateMutability": "view",
+  "inputs": [],
+  "outputs": [
+   {
+    "name": "",
+    "type": "uint256"
+   }
+  ]
+ },
+ {
+  "type": "event",
+  "name": "EvidenceAppended",
+  "inputs": [
+   {
+    "name": "seq",
+    "type": "uint256",
+    "indexed": true
+   },
+   {
+    "name": "fileHash",
+    "type": "bytes32",
+    "indexed": true
+   },
+   {
+    "name": "payloadDigest",
+    "type": "bytes32",
+    "indexed": false
+   },
+   {
+    "name": "verdict",
+    "type": "bytes32",
+    "indexed": false
+   },
+   {
+    "name": "confidenceBps",
+    "type": "uint64",
+    "indexed": false
+   },
+   {
+    "name": "timestamp",
+    "type": "uint256",
+    "indexed": false
+   }
+  ]
+ }
+]

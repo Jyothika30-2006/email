@@ -1,0 +1,3 @@
+# Demo/CI fixture for check_tor_exit only — see samples/README.md.
+# Any IP listed here is reported as "simulated via fixture" (NOT a live DNSEL answer).
+198.51.100.24

@@ -1,0 +1,43 @@
+Return-Path: <source@relay44.example.org>
+Received: from mail2.tor-relay.invalid (unknown [198.51.100.24])
+	by relay44.example.org (Exim 4.98) with ESMTPA id 4aF2k1-0000Qz2X
+	for <desk@newsroom.example>; Wed, 18 Nov 2026 02:14:55 +0000
+Received: from [127.0.0.1] by relay44.example.org (openmail relay)
+	with LOCAL id r44.4aF2k1 for <desk@newsroom.example>; Wed, 18 Nov 2026 02:14:55 +0000
+Authentication-Results: relay44.example.org;
+	spf=pass (relay44.example.org: domain of source@relay44.example.org designates 198.51.100.24 as permitted sender) smtp.mailfrom=source@relay44.example.org;
+	dkim=pass header.i=@relay44.example.org header.s=key1 header.b=CCCC1111DDDD2222;
+	dmarc=pass (p=reject sp=reject dis=none) header.from=relay44.example.org
+Received-SPF: pass (relay44.example.org: domain of source@relay44.example.org designates 198.51.100.24 as permitted sender) client-ip=198.51.100.24;
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/simple; d=relay44.example.org; s=key1;
+	t=1763460895; bh=FFFF1111GGGG2222HHHH3333; h=From:To:Subject:Date;
+	b=IIII4444JJJJ5555KKKK6666
+Message-ID: <20261118021455.4aF2k1@mail2.tor-relay.invalid>
+Date: Wed, 18 Nov 2026 02:14:55 +0000
+From: "Confidential source" <source@relay44.example.org>
+To: desk@newsroom.example
+Subject: Documents for the November investigation - no reply needed
+MIME-Version: 1.0
+Content-Type: text/plain; charset="UTF-8"
+Content-Content: 8bit
+Content-Transfer-Encoding: 8bit
+
+Editor,
+
+The material you requested is not attached here; I am not able to send files
+through this relay without risking the whole batch. I have instead placed the
+first tranche in the drop folder we agreed on last month.
+
+I am writing from a Tor exit because I have reason to believe my line is
+monitored, not because the documents are unreliable. Everything in the tranche
+is dated and cross-referenced against the procurement ledger; the third folder
+contains the countersignature pages.
+
+Please do not reply to this address, and do not attempt to identify the machine
+this came from — I would rather lose the story than expose the people who gave
+me the files. If you want to confirm authenticity, the checksum list is in the
+root of the drop, and the last line of folder two quotes the sentence only you
+and I discussed on the phone.
+
+Respectfully,
+a source
