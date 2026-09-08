@@ -1,0 +1,49 @@
+Return-Path: <bounce@news.example.com>
+Received: from mail.example.com (mail.example.com. [192.0.2.10])
+	by mx.google.com with ESMTPS id z9fi293815qkb.142.2026.09.01.08.12.34
+	for <analyst@corp.example> (version=TLS1_3 cipher=TLS_AES_256_GCM_SHA384 bits=256/256);
+	Tue, 01 Sep 2026 08:12:36 -0700 (PDT)
+Received-SPF: pass (google.com: domain of bounce@news.example.com designates 192.0.2.10 as permitted sender) client-ip=192.0.2.10;
+Authentication-Results: mx.google.com;
+       dkim=pass header.i=@news.example.com header.s=selector1 header.b=AAAB;
+       spf=pass (google.com: domain of bounce@news.example.com designates 192.0.2.10 as permitted sender) smtp.mailfrom=bounce@news.example.com;
+       dmarc=pass (p=NONE sp=QUARANTINE dis=none) header.from=example.com
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=news.example.com; s=selector1;
+	t=1756714356; bh=AAAA0000BBBB1111CCCC2222DDDD3333=;
+	h=From:To:Subject:Date:Message-ID:MIME-Version;
+	b=ZZZZ9999YYYY8888XXXX7777WWWW6666VVVV5555UUUU4444TTTT3333SSSS2222
+X-Google-Dkim-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=1e100.net; s=20230601;
+	t=1756714356; bh=AAAA0000BBBB1111CCCC2222DDDD3333=; h=From:To:Subject:Date;
+	b=QQQQ1111RRRR2222SSSS3333
+Message-ID: <20260901151234.Z9FI293815QKB.142@news.example.com>
+Date: Tue, 1 Sep 2026 15:12:34 +0000
+From: "Example Weekly" <news@news.example.com>
+To: analyst@corp.example
+Subject: =?UTF-8?B?RXhhbXBsZSBXZWVrbHkgIzQyIOKAlCBxdWFydGVyeSBzZWN1cml0eSB1cGRhdGU=?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset="UTF-8"
+Content-Transfer-Encoding: 8bit
+
+Hi analyst,
+
+This is the Example Weekly #42 digest, sent to you because you are subscribed to
+the quarterly security update list. Nothing here is urgent and no action is
+required from you.
+
+In this issue:
+  - New RFC on header-based origin tracing for webmail senders
+  - Why a single GeoIP answer is not evidence (use 2+ sources + a radius)
+  - Reminder: the quarterly phishing drill results are in the portal
+
+Read the full digest on our site (a normal, https, branded domain):
+  https://news.example.com/weekly/42
+
+Manage your subscription:
+  https://news.example.com/preferences?id=42c1
+
+If you did not request this message, you can unsubscribe with one click above;
+we will never ask for your password by email, and this message contains no
+attachments or forms.
+
+-- 
+Example Weekly · news.example.com · sent to analyst@corp.example

@@ -1,0 +1,32 @@
+# Editor settings that match how this code is actually written.
+# Not a formatter config — there is deliberately no "run this and the diff is 900 lines" step here.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+max_line_length = 120
+
+[*.{yml,yaml}]
+indent_size = 2
+
+[*.json]
+indent_size = 2
+
+[*.{md,mkd}]
+indent_size = 4
+max_line_length = off
+trim_trailing_whitespace = false      # two trailing spaces are a line break in markdown
+
+[*.{sh,bat}]
+end_of_line = lf
+
+[*.{sol,env,example}]
+indent_size = 4
+
+[Makefile]
+indent_style = tab

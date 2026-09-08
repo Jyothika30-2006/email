@@ -1,0 +1,46 @@
+Return-Path: <m.rehman.banking@gmail.com>
+Received: from mail-io1-f46.google.com (mail-io1-f46.google.com. [74.125.20.46])
+        by mx.google.com with SMTP id io1-20261117.46.1.3 for <ceo@corp.example>;
+        Tue, 17 Nov 2026 08:01:19 -0800 (PST)
+Received-SPF: pass (google.com: domain of m.rehman.banking@gmail.com designates 74.125.20.46 as permitted sender) client-ip=74.125.20.46;
+Authentication-Results: mx.google.com;
+       spf=pass (google.com: domain of m.rehman.banking@gmail.com designates 74.125.20.46 as permitted sender) smtp.mailfrom=m.rehman.banking@gmail.com;
+       dkim=pass header.i=@gmail.com header.s=20230601 header.b=BBBB1111CCCC2222DDDD3333;
+       dmarc=pass (p=NONE sp=NONE dis=none) header.from=gmail.com
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=gmail.com; s=20230601;
+        t=1763394079; bh=AAAA1111BBBB2222CCCC3333DDDD4444=;
+        h=From:To:Subject:Date:Message-ID:MIME-Version;
+        b=EEEE4444FFFF5555GGGG6666HHHH7777
+Message-ID: <CAF=0x9f2a7b1c6d4e@mail.gmail.com>
+Date: Tue, 17 Nov 2026 21:31:04 +0530
+From: "M. Rehman - Settlement Desk" <m.rehman.banking@gmail.com>
+Reply-To: m.rehman.settlements@outlook.com
+To: ceo@corp.example
+Subject: Private and confidential - your attention, best regards
+MIME-Version: 1.0
+Content-Type: text/plain; charset="UTF-8"
+Content-Transfer-Encoding: 8bit
+
+Dear Sir/Madam,
+
+I trust this message meets you in good health. I write to you in a strictly
+confidential capacity concerning an inward remittance that is currently held at
+our clearing desk under reference number SETT/1138/2026.
+
+The matter has my personal attention and I would prefer to conclude it
+discreetly, at the earliest, before the position is escalated to the audit
+committee. I have refrained from calling your office directly because I do not
+wish the file to be discussed over the open line.
+
+Kindly confirm a convenient time today or tomorrow so that we may review the
+documents together. You may reach me on this address, or on the client portal
+link below, which is the only channel I am permitted to use for this matter:
+
+  https://corp-portal-secure.com/verify/signin?token=SETT-1138
+
+Do not share this message with your staff. Discretion is, as you will
+appreciate, the entire basis of our arrangement.
+
+Warm regards,
+M. Rehman
+Settlement Desk

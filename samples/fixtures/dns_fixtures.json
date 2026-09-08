@@ -1,0 +1,26 @@
+{
+  "10.2.0.192.ip-port.exitlist.torproject.org": "NXDOMAIN",
+  "10.2.0.192.zen.spamhaus.org": "NXDOMAIN",
+  "24.100.51.198.ip-port.exitlist.torproject.org": "NXDOMAIN",
+  "24.100.51.198.zen.spamhaus.org": [],
+  "46.20.125.74.ip-port.exitlist.torproject.org": "NXDOMAIN",
+  "46.20.125.74.zen.spamhaus.org": "NXDOMAIN",
+  "66.113.0.203.zen.spamhaus.org": [],
+  "77.113.0.203.ip-port.exitlist.torproject.org": "NXDOMAIN",
+  "77.113.0.203.zen.spamhaus.org": [],
+  "88.113.0.203.ip-port.exitlist.torproject.org": "NXDOMAIN",
+  "88.113.0.203.zen.spamhaus.org": [],
+  "99.113.0.203.ip-port.exitlist.torproject.org": "NXDOMAIN",
+  "corp-portal-secure.com": [
+    "203.0.113.88"
+  ],
+  "mail2.tor-relay.invalid": [
+    "198.51.100.24"
+  ],
+  "payload01.secure-p0nyail.com": [
+    "203.0.113.77"
+  ],
+  "secure-p0nyail.com": [
+    "203.0.113.66"
+  ]
+}

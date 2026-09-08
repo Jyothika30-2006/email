@@ -1,0 +1,18 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question about the methodology
+    url: https://github.com/Jyothika30-2006/email/blob/main/docs/FORENSIC_METHODOLOGY.md
+    about: >
+      Why a verdict moved, what a ceiling means, how the confidence number is built. The doc is
+      written to be argued with; read §0 and §5 first, then open a discussion.
+  - name: Report a security issue
+    url: https://github.com/Jyothika30-2006/email/security/advisories/new
+    about: >
+      Private vulnerability report. Anything that lets attacker text cross a boundary — injection
+      escape, whitelist or gate bypass, sandbox escape, fail-open, ledger forgery — goes here, not
+      into an issue.
+  - name: Demo transcript
+    url: https://github.com/Jyothika30-2006/email/blob/main/DEMO.md
+    about: >
+      The guided run, captured from a real terminal, with the claim-to-test table. If you are deciding
+      whether this does what it says, this is the fastest honest look.

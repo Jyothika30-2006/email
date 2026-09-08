@@ -1,0 +1,18 @@
+# SENTINEL-IR — runtime dependencies (deliberately tiny; this is a *local* tool)
+#
+# Core: everything else in the agent is stdlib (email, hashlib, hmac, socket,
+# http.server, subprocess, urllib, json, dataclasses, termios/tty for the kill-switch).
+rich>=13.0          # live terminal UI: panels, progress, colour-coded risk gauge
+dnspython>=2.4      # Tor DNSEL A-record lookups + rDNS fallbacks (NXDOMAIN vs NoAnswer matter)
+
+# ── optional: unit tests ──────────────────────────────────────────────────────
+# pytest>=8.0
+
+# ── optional: on-chain evidence mirror (--chain-backend ganache) ──────────────
+# pycryptodome>=3.20    # keccak-256 (we refuse to hand-roll an evidence hash)
+# web3>=6.15            # only if you prefer web3/eth_account over the built-in signer
+
+# ── optional: richer static analysis inside the sandbox ───────────────────────
+# oletools>=0.60        # OLE/macros (the scanner degrades gracefully without it)
+# yara-python>=4.3      # rule matching (sandbox/rules/*.yar are loaded only if present)
+# exiftool==*           # not a pip package — `sudo apt install libimage-exiftool-perl`

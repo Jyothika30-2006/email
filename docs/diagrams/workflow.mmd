@@ -1,0 +1,44 @@
+%%{init: {"theme": "dark", "sequence": {"actorMargin": 12, "boxMargin": 8, "width": 190}}}%%
+%% SENTINEL-IR — one investigation, end to end (the workflow diagram).
+%% Mirrors agent.py: custody first, injection defanged before the model sees anything,
+%% every tool through dispatch(), verdict then ledger, exit code = verdict.
+%%
+sequenceDiagram
+  autonumber
+  participant AN as Analyst · terminal
+  participant CT as Controller agent.py
+  participant BR as Brain Ollama or deterministic
+  participant DP as dispatch only exec path
+  participant TL as Whitelisted tool
+  participant SB as Sandbox docker or rlimit
+  participant EV as evidence and blockchain
+
+  AN->>CT: investigate sample.eml --demo
+  CT->>EV: sha256 + md5 of the file BEFORE any analysis (hash_evidence first)
+  CT->>CT: injection scan — tokens defanged, attempt recorded as a signal, never obeyed
+  CT->>CT: attachments staged read-only and hashed
+  loop THINK → CHOOSE → ACT → OBSERVE — max 14 steps, 15 s hard cap per tool
+    CT->>BR: headers digest + sanitised body excerpt
+    BR-->>CT: thought + tool_call name and args
+    CT->>DP: dispatch name and args
+    DP->>DP: whitelist — an invented tool is refused and scored, not run
+    alt file-touching tool and no --yes / --demo
+      DP->>AN: CONFIRM_NEEDED panel — type yes
+      AN-->>DP: yes → APPROVED · anything else or 120 s silence → DENIED
+    end
+    DP->>TL: run under timeout, kill-switch polled inside the tool
+    opt static_file_scan only
+      TL->>SB: read-only mount, no network, destroyed after
+      SB-->>TL: magic · entropy · OLE/PDF/PE structure · strings · optional YARA
+    end
+    TL-->>DP: ToolResult ok · summary · signals · data
+    DP-->>CT: result + gate decision + elapsed ms
+    CT->>CT: RiskState.add_all → risk 0-100 → repaint cat mood and both bars
+  end
+  CT->>AN: verdict + every supporting evidence line + gaps as unobserved
+  CT->>EV: report.md · run.json · evidence.json · audit.log · status.jsonl
+  CT->>EV: hash-chain block appended AFTER the verdict was shown
+  opt Ganache reachable and --chain-backend not hashchain
+    CT->>EV: on-chain mirror, 12 s bound, failure printed and non-fatal
+  end
+  CT-->>AN: exit code IS the verdict — 0 SAFE · 1 SUSPICIOUS · 2 MALICIOUS

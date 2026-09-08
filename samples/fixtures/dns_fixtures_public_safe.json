@@ -1,0 +1,4 @@
+# SENTINEL_DNS_FIXTURES target for live-demo use (loopback answers only).
+# This file intentionally contains NO public IPs; the public-looking
+# documentation-range answers live in dns_fixtures.json.
+{}

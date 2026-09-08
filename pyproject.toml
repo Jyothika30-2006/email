@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sentinel-ir"
+version = "1.0.0"
+description = "Local, terminal-based AI agent for email threat detection, sender geolocation, forensic analysis and blockchain-verified evidence logging"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+keywords = ["phishing", "dfir", "email-forensics", "ollama", "agent", "blockchain", "sandbox"]
+# Two runtime deps, no web framework, no dashboard, no cloud SDK.
+dependencies = [
+  "rich>=13.0",
+  "dnspython>=2.4",
+]
+
+[project.optional-dependencies]
+# Tests only need the two core deps (everything network-facing is mocked locally).
+dev = ["pytest>=8.0"]
+# Optional on-chain evidence mirror. keccak-256 is required to match Solidity's
+# keccak256; we refuse to ship a hand-rolled sponge for an evidence hash.
+chain = ["pycryptodome>=3.20"]
+# Optional deeper static analysis for the sandbox scanner (it degrades gracefully).
+sandbox = ["oletools>=0.60", "yara-python>=4.3"]
+
+[project.scripts]
+sentinel-ir = "cybersecurity_agent.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["cybersecurity_agent*"]
+
+[tool.setuptools.package-data]
+cybersecurity_agent = [
+  "prompts/*.py",
+  "sandbox/Dockerfile",
+  "sandbox/rules/*.yar",
+  "blockchain/contract/*.sol",
+  "blockchain/contract/*.json",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"

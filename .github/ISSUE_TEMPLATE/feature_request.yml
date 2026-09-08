@@ -1,0 +1,84 @@
+name: Feature request
+description: A new check, tool, flag or output — with its boundary spelled out
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The design constraint, stated up front so nobody wastes an evening: this project keeps exactly
+        **two runtime dependencies**, runs with no network, no dashboard, no cloud LLM, and every
+        capability it gains has to fit inside `tools/dispatch.py` (whitelist → `needs` → timeout →
+        human gate). A feature that needs an exception to that is a different project.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What does the tool fail to notice today?
+      description: |
+        A concrete case, ideally a sample-shaped one: "a .onebox attachment with a macro never gets
+        flagged because oletools is absent and we do not label the gap loudly enough".
+    validations:
+      required: true
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What kind of change is it?
+      options:
+        - a new whitelisted tool (needs args_spec, needs, timeout, gate flags)
+        - a new risk factor / weight in risk.FACTOR_WEIGHTS
+        - parsing: a header or body pattern we currently miss
+        - output: report.md / run.json / exit-code surface
+        - display: pet mood, care reminder, status.jsonl field
+        - evidence: hash-chain, anchoring, on-chain mirror
+        - documentation or teaching material
+    validations:
+      required: true
+
+  - type: textarea
+    id: design
+    attributes:
+      label: Proposed shape
+      description: |
+        What runs, what it can touch, and where it can be refused. If it touches a file, say how the
+        gate applies. If it talks to the network, say what happens when it times out — "unobserved",
+        never "clean".
+    validations:
+      required: true
+
+  - type: textarea
+    id: fail-open
+    attributes:
+      label: How could this fail open?
+      description: |
+        Every new path is a new way to be silently wrong. Name the failure mode you are most worried
+        about and what test would catch it. This field does the job a design review would.
+    validations:
+      required: true
+
+  - type: textarea
+    id: tests
+    attributes:
+      label: Tests you would ship with it
+      description: |
+        Minimum: it works, it is refused when its `needs` are unmet, the gate blocks it without
+        approval, its timeout fires, and any doc number it introduces is measured. End-to-end
+        expectations for all four samples must still hold, or be re-measured honestly.
+      value: |
+        - `tests/test_…::test_…`
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope confirmations
+      options:
+        - label: "No web UI, no browser route, no framework (rule 2)"
+          required: true
+        - label: "No new runtime dependency, or a paragraph of justification above"
+          required: true
+        - label: "The verdict still comes from `risk.fuse() + classify()`, not from a model's opinion"
+          required: true
+        - label: "I am willing to implement it, and `./scripts/demo.sh` will still exit 0 afterwards"
+          required: false
